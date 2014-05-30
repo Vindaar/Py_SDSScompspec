@@ -1,10 +1,1 @@
-This version is the first almost finished version. 
-
-The memory related problems are gone, fixed by removing unecessary 
-arrays after each loop. 
-Dust corrections have been implemented, which can be called if the
-program is run with the --dust flag.
-
-Additionally statistics are calculated and all sorts of information
-is written to the header of the FITS file and the table 
-containing information about the QSOs is written as well.
+Python SDSSCompspec repository on GitHub
