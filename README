@@ -1,13 +1,4 @@
-This is the first version of SDSS-Compspec in Python.
-It works similar to the C program, run with:
-./PyS_SDSS-compspec <list file>
+Second version of SDSScompspec in Python.
 
-
-It creates the an output FITS file, containing the opacities, its errors and the number of contributing QSOs for each pixel.
-
-Some things are still hardcoded (some constants).
-
-Main problems:
-It is a lot slower than its C counterpart
-and
-it uses a ton of memory, because big arrays are not given back to the system, after they are useful.
+First working version. Only outputs bare minimum into output FITS file,
+contains no dust corrections and has memory problems.

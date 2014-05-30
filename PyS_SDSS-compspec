@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 from astropy.io import fits
 import re
 from scipy import optimize
+import gc
+import multiprocessing as mp
 
 # HDU numbers in this file are given starting from 0, since it is
 # conform with astropy, although the FITS standard starts from 1!
@@ -416,6 +418,7 @@ def build_fits_file(cspec, spec, outfile):
     while cspec.nhist == 0:
         i += 1
     sidx = i
+    npix = 0
 
     hdu0_row1 = []
     hdu0_row2 = []
@@ -517,8 +520,10 @@ def main():
     # Read filename for the output FITS file:
     outfile = raw_input('Give the name of the output FITS file: ')
 
+
+
     # Start the loop over all files in the 
-    for file in files:
+    for i, file in enumerate(files):
         print "Starting with spectrum #: ", i
         spectra.append(spectrum())
         filetype = check_filetype(file)
@@ -541,7 +546,1060 @@ def main():
             if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
                 if build_compspec(compspec, spectra[i]) == 0:
                     spectra_count += 1
+        # Every 50th loop, we free all objects, which are not used anymore. 
+        # This function is called automatically, but not often enough. Reduces
+        # memory usage quite a lot.
+        if i % 50:
+            gc.collect()
+        # Free all big arrays, which won't be needed anymore, after this loop. 
+        # Unecessary memory usage.
+        del(spectra[i].flux)
+        del(spectra[i].flux_error)
+        del(spectra[i].wave)
+        del(spectra[i].powerlaw)
+        # increase loop variable, since we run over files and not an integer
         i += 1
+	        
+    
+    statistics(compspec, spectra)
+    build_fits_file(compspec, spectra, outfile)
+    print "Spectra used: ", spectra_count, "/", len(files)
+
+if __name__ == "__main__":
+    main()
+
+
+################################# END OF THE PROGRAM #################################
+
+
+
+NU
+46
+
+NG
+88
+
+NR
+74
+
+NI
+88
+
+NZ
+140
+
+UCURVE
+(2980,0.0000,0.0727)
+(3005,0.0001,0.0992)
+(3030,0.0005,0.1308)
+(3055,0.0013,0.1673)
+(3080,0.0026,0.2075)
+(3105,0.0052,0.2470)
+(3130,0.0093,0.2862)
+(3155,0.0161,0.3444)
+(3180,0.0240,0.3920)
+(3205,0.0323,0.4300)
+(3230,0.0405,0.4585)
+(3255,0.0485,0.4817)
+(3280,0.0561,0.5007)
+(3305,0.0634,0.5189)
+(3330,0.0700,0.5351)
+(3355,0.0756,0.5486)
+(3380,0.0803,0.5581)
+(3405,0.0848,0.5669)
+(3430,0.0883,0.5727)
+(3455,0.0917,0.5812)
+(3480,0.0959,0.5959)
+(3505,0.1001,0.6112)
+(3530,0.1029,0.6221)
+(3555,0.1044,0.6294)
+(3580,0.1053,0.6350)
+(3605,0.1063,0.6406)
+(3630,0.1075,0.6476)
+(3655,0.1085,0.6553)
+(3680,0.1084,0.6631)
+(3705,0.1064,0.6702)
+(3730,0.1024,0.6763)
+(3755,0.0966,0.6815)
+(3780,0.0887,0.6863)
+(3805,0.0787,0.6912)
+(3830,0.0672,0.6965)
+(3855,0.0549,0.7023)
+(3880,0.0413,0.7088)
+(3905,0.0268,0.7158)
+(3930,0.0145,0.7235)
+(3955,0.0075,0.7315)
+(3980,0.0042,0.7393)
+(4005,0.0022,0.7464)
+(4030,0.0010,0.7526)
+(4055,0.0006,0.7581)
+(4080,0.0004,0.7631)
+(4105,0.0002,0.7680)
+(4130,0.0000,0.7727)
+
+GCURVE
+(3630,0.0000,0.6476)
+(3655,0.0003,0.6553)
+(3680,0.0008,0.6631)
+(3705,0.0013,0.6702)
+(3730,0.0019,0.6763)
+(3755,0.0024,0.6815)
+(3780,0.0034,0.6863)
+(3805,0.0055,0.6912)
+(3830,0.0103,0.6965)
+(3855,0.0194,0.7023)
+(3880,0.0326,0.7088)
+(3905,0.0492,0.7158)
+(3930,0.0686,0.7235)
+(3955,0.0900,0.7315)
+(3980,0.1123,0.7393)
+(4005,0.1342,0.7464)
+(4030,0.1545,0.7526)
+(4055,0.1722,0.7581)
+(4080,0.1873,0.7631)
+(4105,0.2003,0.7680)
+(4130,0.2116,0.7727)
+(4155,0.2214,0.7774)
+(4180,0.2301,0.7820)
+(4205,0.2378,0.7862)
+(4230,0.2448,0.7902)
+(4255,0.2513,0.7940)
+(4280,0.2574,0.7976)
+(4305,0.2633,0.8013)
+(4330,0.2691,0.8049)
+(4355,0.2747,0.8087)
+(4380,0.2801,0.8124)
+(4405,0.2852,0.8161)
+(4430,0.2899,0.8199)
+(4455,0.2940,0.8235)
+(4480,0.2979,0.8271)
+(4505,0.3016,0.8305)
+(4530,0.3055,0.8337)
+(4555,0.3097,0.8368)
+(4580,0.3141,0.8397)
+(4605,0.3184,0.8425)
+(4630,0.3224,0.8453)
+(4655,0.3257,0.8480)
+(4680,0.3284,0.8505)
+(4705,0.3307,0.8528)
+(4730,0.3327,0.8549)
+(4755,0.3346,0.8568)
+(4780,0.3364,0.8587)
+(4805,0.3383,0.8606)
+(4830,0.3403,0.8625)
+(4855,0.3425,0.8643)
+(4880,0.3448,0.8661)
+(4905,0.3472,0.8678)
+(4930,0.3495,0.8693)
+(4955,0.3519,0.8706)
+(4980,0.3541,0.8719)
+(5005,0.3562,0.8730)
+(5030,0.3581,0.8740)
+(5055,0.3597,0.8750)
+(5080,0.3609,0.8759)
+(5105,0.3613,0.8768)
+(5130,0.3609,0.8777)
+(5155,0.3595,0.8785)
+(5180,0.3581,0.8794)
+(5205,0.3558,0.8803)
+(5230,0.3452,0.8813)
+(5255,0.3194,0.8822)
+(5280,0.2807,0.8832)
+(5305,0.2339,0.8842)
+(5330,0.1839,0.8852)
+(5355,0.1352,0.8861)
+(5380,0.0911,0.8869)
+(5405,0.0548,0.8877)
+(5430,0.0295,0.8885)
+(5455,0.0166,0.8891)
+(5480,0.0112,0.8897)
+(5505,0.0077,0.8902)
+(5530,0.0050,0.8907)
+(5555,0.0032,0.8911)
+(5580,0.0021,0.8914)
+(5605,0.0015,0.8917)
+(5630,0.0012,0.8920)
+(5655,0.0010,0.8923)
+(5680,0.0009,0.8926)
+(5705,0.0008,0.8929)
+(5730,0.0006,0.8933)
+(5755,0.0005,0.8938)
+(5780,0.0003,0.8945)
+(5805,0.0001,0.8952)
+(5830,0.0000,0.8962)
+
+RCURVE
+(5380,0.0000,0.8869)
+(5405,0.0014,0.8877)
+(5430,0.0099,0.8885)
+(5455,0.0259,0.8891)
+(5480,0.0497,0.8897)
+(5505,0.0807,0.8902)
+(5530,0.1186,0.8907)
+(5555,0.1625,0.8911)
+(5580,0.2093,0.8914)
+(5605,0.2555,0.8917)
+(5630,0.2975,0.8920)
+(5655,0.3326,0.8923)
+(5680,0.3609,0.8926)
+(5705,0.3834,0.8929)
+(5730,0.4010,0.8933)
+(5755,0.4147,0.8938)
+(5780,0.4253,0.8945)
+(5805,0.4333,0.8952)
+(5830,0.4395,0.8962)
+(5855,0.4446,0.8973)
+(5880,0.4489,0.8986)
+(5905,0.4527,0.9001)
+(5930,0.4563,0.9018)
+(5955,0.4599,0.9037)
+(5980,0.4634,0.9057)
+(6005,0.4665,0.9079)
+(6030,0.4689,0.9103)
+(6055,0.4703,0.9128)
+(6080,0.4711,0.9153)
+(6105,0.4717,0.9177)
+(6130,0.4727,0.9199)
+(6155,0.4744,0.9220)
+(6180,0.4767,0.9238)
+(6205,0.4792,0.9253)
+(6230,0.4819,0.9265)
+(6255,0.4844,0.9275)
+(6280,0.4867,0.9285)
+(6305,0.4887,0.9294)
+(6330,0.4902,0.9305)
+(6355,0.4909,0.9316)
+(6380,0.4912,0.9327)
+(6405,0.4912,0.9337)
+(6430,0.4912,0.9346)
+(6455,0.4914,0.9354)
+(6480,0.4915,0.9363)
+(6505,0.4912,0.9373)
+(6530,0.4901,0.9385)
+(6555,0.4878,0.9395)
+(6580,0.4852,0.9400)
+(6605,0.4818,0.9398)
+(6630,0.4697,0.9386)
+(6655,0.4421,0.9366)
+(6680,0.4009,0.9349)
+(6705,0.3499,0.9345)
+(6730,0.2924,0.9366)
+(6755,0.2318,0.9421)
+(6780,0.1715,0.9492)
+(6805,0.1152,0.9494)
+(6830,0.0687,0.9334)
+(6855,0.0380,0.9057)
+(6880,0.0212,0.8862)
+(6905,0.0134,0.8893)
+(6930,0.0099,0.9083)
+(6955,0.0076,0.9311)
+(6980,0.0055,0.9450)
+(7005,0.0039,0.9464)
+(7030,0.0027,0.9561)
+(7055,0.0020,0.9709)
+(7080,0.0015,0.9826)
+(7105,0.0012,0.9827)
+(7130,0.0010,0.9629)
+(7155,0.0007,0.9192)
+(7180,0.0004,0.8849)
+(7205,0.0002,0.8974)
+(7230,0.0000,0.9182)
+
+ICURVE
+(6430,0.0000,0.9346)
+(6455,0.0001,0.9354)
+(6480,0.0003,0.9363)
+(6505,0.0004,0.9373)
+(6530,0.0004,0.9385)
+(6555,0.0003,0.9395)
+(6580,0.0003,0.9400)
+(6605,0.0004,0.9398)
+(6630,0.0009,0.9386)
+(6655,0.0019,0.9366)
+(6680,0.0034,0.9349)
+(6705,0.0056,0.9345)
+(6730,0.0103,0.9366)
+(6755,0.0194,0.9421)
+(6780,0.0344,0.9492)
+(6805,0.0561,0.9494)
+(6830,0.0839,0.9334)
+(6855,0.1164,0.9057)
+(6880,0.1528,0.8862)
+(6905,0.1948,0.8893)
+(6930,0.2408,0.9083)
+(6955,0.2857,0.9311)
+(6980,0.3233,0.9450)
+(7005,0.3503,0.9464)
+(7030,0.3759,0.9561)
+(7055,0.3990,0.9709)
+(7080,0.4162,0.9826)
+(7105,0.4233,0.9827)
+(7130,0.4165,0.9629)
+(7155,0.3943,0.9192)
+(7180,0.3760,0.8849)
+(7205,0.3823,0.8974)
+(7230,0.3918,0.9182)
+(7255,0.3892,0.9195)
+(7280,0.3828,0.9153)
+(7305,0.3820,0.9225)
+(7330,0.3884,0.9436)
+(7355,0.3872,0.9505)
+(7380,0.3821,0.9496)
+(7405,0.3787,0.9512)
+(7430,0.3759,0.9531)
+(7455,0.3727,0.9535)
+(7480,0.3681,0.9508)
+(7505,0.3618,0.9449)
+(7530,0.3565,0.9416)
+(7555,0.3554,0.9483)
+(7580,0.3478,0.9429)
+(7605,0.1473,0.4926)
+(7630,0.2096,0.6546)
+(7655,0.2648,0.7939)
+(7680,0.3300,0.9530)
+(7705,0.3256,0.9558)
+(7730,0.3223,0.9602)
+(7755,0.3179,0.9615)
+(7780,0.3129,0.9605)
+(7805,0.3077,0.9583)
+(7830,0.3026,0.9559)
+(7855,0.2980,0.9541)
+(7880,0.2944,0.9541)
+(7905,0.2921,0.9567)
+(7930,0.2916,0.9622)
+(7955,0.2921,0.9692)
+(7980,0.2927,0.9762)
+(8005,0.2923,0.9814)
+(8030,0.2896,0.9833)
+(8055,0.2840,0.9801)
+(8080,0.2758,0.9702)
+(8105,0.2642,0.9524)
+(8130,0.2427,0.9285)
+(8155,0.2091,0.9075)
+(8180,0.1689,0.8931)
+(8205,0.1276,0.8853)
+(8230,0.0901,0.8843)
+(8255,0.0603,0.8902)
+(8280,0.0378,0.9033)
+(8305,0.0218,0.9242)
+(8330,0.0117,0.9483)
+(8355,0.0068,0.9591)
+(8380,0.0048,0.9576)
+(8405,0.0033,0.9567)
+(8430,0.0020,0.9564)
+(8455,0.0013,0.9565)
+(8480,0.0010,0.9569)
+(8505,0.0009,0.9576)
+(8530,0.0009,0.9584)
+(8555,0.0008,0.9592)
+(8580,0.0005,0.9598)
+(8605,0.0002,0.9602)
+(8630,0.0000,0.9603)
+
+ZCURVE
+(7730,0.0000,0.9602)				 
+(7755,0.0000,0.9615)
+(7780,0.0001,0.9605)
+(7805,0.0001,0.9583)
+(7830,0.0001,0.9559)
+(7855,0.0002,0.9541)
+(7880,0.0002,0.9541)
+(7905,0.0003,0.9567)
+(7930,0.0005,0.9622)
+(7955,0.0007,0.9692)
+(7980,0.0011,0.9762)
+(8005,0.0017,0.9814)
+(8030,0.0027,0.9833)
+(8055,0.0040,0.9801)
+(8080,0.0057,0.9702)
+(8105,0.0079,0.9524)
+(8130,0.0106,0.9285)
+(8155,0.0139,0.9075)
+(8180,0.0178,0.8931)
+(8205,0.0222,0.8853)
+(8230,0.0271,0.8843)
+(8255,0.0324,0.8902)
+(8280,0.0382,0.9033)
+(8305,0.0446,0.9242)
+(8330,0.0511,0.9483)
+(8355,0.0564,0.9591)
+(8380,0.0603,0.9576)
+(8405,0.0637,0.9567)
+(8430,0.0667,0.9564)
+(8455,0.0694,0.9565)
+(8480,0.0717,0.9569)
+(8505,0.0736,0.9576)
+(8530,0.0752,0.9584)
+(8555,0.0765,0.9592)
+(8580,0.0775,0.9598)
+(8605,0.0782,0.9602)
+(8630,0.0786,0.9603)
+(8655,0.0787,0.9599)
+(8680,0.0785,0.9593)
+(8705,0.0780,0.9586)
+(8730,0.0772,0.9578)
+(8755,0.0763,0.9571)
+(8780,0.0751,0.9567)
+(8805,0.0738,0.9566)
+(8830,0.0723,0.9571)
+(8855,0.0708,0.9582)
+(8880,0.0693,0.9600)
+(8905,0.0674,0.9591)
+(8930,0.0632,0.9314)
+(8955,0.0581,0.8923)
+(8980,0.0543,0.8648)
+(9005,0.0526,0.8633)
+(9030,0.0523,0.8787)
+(9055,0.0522,0.8961)
+(9080,0.0512,0.9020)
+(9105,0.0496,0.8980)
+(9130,0.0481,0.8931)
+(9155,0.0473,0.8962)
+(9180,0.0476,0.9138)
+(9205,0.0482,0.9352)
+(9230,0.0476,0.9407)
+(9255,0.0447,0.9103)
+(9280,0.0391,0.8345)
+(9305,0.0329,0.7441)
+(9330,0.0283,0.6752)
+(9355,0.0264,0.6524)
+(9380,0.0271,0.6794)
+(9405,0.0283,0.7178)
+(9430,0.0275,0.7184)
+(9455,0.0254,0.6897)
+(9480,0.0252,0.7003)
+(9505,0.0256,0.7214)
+(9530,0.0246,0.7147)
+(9555,0.0244,0.7251)
+(9580,0.0252,0.7594)
+(9605,0.0258,0.7923)
+(9630,0.0265,0.8302)
+(9655,0.0274,0.8766)
+(9680,0.0279,0.9150)
+(9705,0.0271,0.9253)
+(9730,0.0252,0.9059)
+(9755,0.0236,0.8947)
+(9780,0.0227,0.9045)
+(9805,0.0222,0.9262)
+(9830,0.0216,0.9500)
+(9855,0.0208,0.9652)
+(9880,0.0196,0.9656)
+(9905,0.0183,0.9642)
+(9930,0.0171,0.9630)
+(9955,0.0160,0.9618)
+(9980,0.0149,0.9607)
+(10005,0.0138,0.9597)
+(10030,0.0128,0.9588)
+(10055,0.0118,0.9579)
+(10080,0.0108,0.9572)
+(10105,0.0099,0.9565)
+(10130,0.0091,0.9559)
+(10155,0.0083,0.9553)
+(10180,0.0075,0.9549)
+(10205,0.0068,0.9545)
+(10230,0.0061,0.9541)
+(10255,0.0055,0.9539)
+(10280,0.0050,0.9537)
+(10305,0.0045,0.9535)
+(10330,0.0041,0.9534)
+(10355,0.0037,0.9534)
+(10380,0.0033,0.9534)
+(10405,0.0030,0.9535)
+(10430,0.0027,0.9536)
+(10455,0.0025,0.9537)
+(10480,0.0023,0.9539)
+(10505,0.0021,0.9541)
+(10530,0.0019,0.9544)
+(10555,0.0018,0.9547)
+(10580,0.0017,0.9551)
+(10605,0.0016,0.9554)
+(10630,0.0015,0.9558)
+(10655,0.0014,0.9563)
+(10680,0.0013,0.9567)
+(10705,0.0012,0.9572)
+(10730,0.0011,0.9577)
+(10755,0.0010,0.9582)
+(10780,0.0009,0.9587)
+(10805,0.0008,0.9593)
+(10830,0.0008,0.9598)
+(10855,0.0007,0.9604)
+(10880,0.0006,0.9609)
+(10905,0.0006,0.9615)
+(10930,0.0006,0.9621)
+(10955,0.0005,0.9626)
+(10980,0.0005,0.9632)
+(11005,0.0004,0.9638)
+(11030,0.0004,0.9643)
+(11055,0.0003,0.9648)
+(11080,0.0003,0.9654)
+(11105,0.0002,0.9659)
+(11130,0.0002,0.9664)
+(11155,0.0001,0.9669)
+(11180,0.0001,0.9673)
+(11205,0.0000,0.9677)
+(11230,0.0000,0.9682)
+#!/usr/bin/env python
+
+import numpy as np
+from pylab import *
+from matplotlib import rc
+from matplotlib import pyplot as plt
+from astropy.io import fits
+import re
+from scipy import optimize
+import gc
+import multiprocessing as mp
+
+# HDU numbers in this file are given starting from 0, since it is
+# conform with astropy, although the FITS standard starts from 1!
+
+
+############################### READ SDSS BOSS QUASAR SPECTRA #########################################
+############################## Functions #############################################
+
+############################## Functions working on files ############################
+
+# Need resolving power of spectrum?
+def read_spec(qso, spec):
+# Function whic is called to read spec FITS file
+
+    #Open FITS file
+    hdu = fits.open(qso)
+    #Read in all necessary information from Header of
+    spec.plateid = hdu[0].header['PLATEID']
+    spec.fiberid = hdu[0].header['FIBERID']
+    spec.ra = hdu[0].header['PLUG_RA']
+    spec.dec = hdu[0].header['PLUG_DEC']
+    spec.beginwl = hdu[0].header['COEFF0']
+    spec.deltawl = hdu[0].header['COEFF1']
+    # Can't find cpix in header, assume it's 1.
+    spec.cpix = 1
+    spec.npix = hdu[1].header['NAXIS2']
+    #Get the image data from HDU 1
+    TableHDU1 = hdu[1].data.copy()
+    spec.flux = TableHDU1['flux'].copy()
+    spec.flux_error = TableHDU1['ivar'].copy()
+
+    TableHDU2 = hdu[2].data.copy()
+    spec.z = float(TableHDU2.field('Z'))
+    spec.MJD = float(TableHDU2.field('MJD'))
+    spec.mag = TableHDU2.field('PSFMAG')
+    
+#Read in primary target information?
+
+    # Call function which converts ra and dec to galactic coordinates
+    
+
+# assume logarithmic wavelength scale. Is used always I believe.?
+    # run over all wavelengths (pixels) and set the wavelength array
+    # as well as the status array and signal to noise ratio
+    for i in xrange(spec.npix):
+        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+        if spec.flux_error[i] > 0: 
+            spec.status.append(1)
+            spec.snr.append(spec.flux[i] / spec.flux_error[i])
+        else:
+            spec.status.append(0)
+            spec.snr.append(0)
+
+    hdu.close()
+
+
+def read_spSpec(qso, spec):
+# Function which is called to read spSpec FITS file
+
+    #Open FITS file
+    hdu = fits.open(qso)
+    #Read in all necessary information from Header of HDU 0:
+    spec.plateid = hdu[0].header['PLATEID']
+    spec.fiberid = hdu[0].header['FIBERID']
+    spec.MJD = hdu[0].header['MJD']
+    spec.ra = hdu[0].header['RAOBJ']
+    spec.dec = hdu[0].header['DECOBJ']
+    spec.z = hdu[0].header['Z']
+    spec.mag = hdu[0].header['MAG']
+    spec.npix = hdu[0].header['NAXIS1']
+    spec.beginwl = hdu[0].header['CRVAL1']
+    spec.deltawl = hdu[0].header['CD1_1']
+    spec.cpix = hdu[0].header['CRPIX1']
+# Call a function which calculates galactic coordinates from ra and dec
+    #Open ImageData from HDU 0 and thus retrieve the flux and the error
+    ImageData = hdu[0].data.copy()
+    spec.flux = ImageData[0, 0:spec.npix].copy()
+    spec.flux_error = ImageData[1, 0:spec.npix].copy()
+    
+# assume logarithmic wavelength scale. Is used always I believe.?
+    # run over all wavelengths (pixels) and set the wavelength array
+    # as well as the status array and signal to noise ratio
+    for i in xrange(spec.npix):
+        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+        if spec.flux_error[i] > 0: 
+            spec.status.append(1)
+            spec.snr.append(spec.flux[i] / spec.flux_error[i])
+        else:
+            spec.status.append(0)
+            spec.snr.append(0)
+
+# Close HDU file here?
+    hdu.close()
+# Do I need to divide ra by 15, like in C code? why is that done?
+# What is primary target flag needed for?
+    
+
+def check_filetype(filename):
+
+    if re.search("spSpec", filename):
+        return 1
+    elif re.search("spec", filename):
+        return 2
+    else:
+        return 0
+
+################################################################################
+############################## Colors ##########################################
+################################################################################
+
+def create_colorcurves():
+    # Open file into colorcurves and all lines into an array
+    colorcurves = open("colorcurves" ,'r')
+    lines = list(colorcurves)
+    i = 0
+    npix = 5763
+    beginwl = 3.4742
+    wavelength = []
+    a = []
+    for i in xrange(npix):
+        wavelength.append(10.0**(beginwl + 0.0001*i))
+    # Create arrays, which are to store the color curves
+    ucurve = []
+    gcurve = []
+    rcurve = []
+    icurve = []
+    zcurve = []
+    NU = NG = NR = NI = NZ = 0
+    # Run over first few lines of the fiel in order to get the number
+    # of elements, which will be stored in the curve arrays
+    for num, line in enumerate(lines, 0):
+        if "NU" in line:
+            NU = eval(lines[num+1])
+        if "NG" in line:
+            NG = eval(lines[num+1]) 
+        if "NR" in line:
+            NR = eval(lines[num+1])
+        if "NI" in line:
+            NI = eval(lines[num+1])
+        if "NZ" in line:
+            NZ = eval(lines[num+1])
+            break
+
+    # Append an empty line at the end of the lines list, in order to
+    # evaluate the last while query for the zcurve. Otherwise it would
+    # be out of range, since i is set to i += 1.
+    lines.append(" ")
+    # run over all elements of the list, and enumerate the lines at
+    # the same time
+    for num, line in enumerate(lines, 0):
+        # check if line contains the beginning of a color curve
+        if "UCURVE" in line:
+            # Set i to num+1, so that it is set to the line after UCURVE
+            i = num+1
+            # Now, read all following lines into curve array, until an
+            # empty line follows
+            while lines[i].strip() != '':
+                # eval() is used to convert the strings found in each line
+                # into floats
+                ucurve.append(eval(lines[i]))
+                i += 1
+        # continue with file
+        if "GCURVE" in line:
+            i = num+1
+            while lines[i].strip() != '':
+                gcurve.append(eval(lines[i]))
+                i += 1            
+        if "RCURVE" in line:
+            i = num+1
+            while lines[i].strip() != '':
+                rcurve.append(eval(lines[i]))
+                i += 1
+        if "ICURVE" in line:
+            i = num+1
+            while lines[i].strip() != '':
+                icurve.append(eval(lines[i]))
+                i += 1
+        if "ZCURVE" in line:
+            i = num+1
+            while lines[i].strip() != '':
+                zcurve.append(eval(lines[i]))
+                i += 1
+
+    # Now the curve arrays are defined and we need to calculate the actual color curves
+    a = np.zeros((npix, 5))
+    i = int(round((log10(ucurve[0][0]) - beginwl)/0.0001))
+    for j in xrange(NU):
+        while wavelength[i] < ucurve[j+1][0]:
+            a[i][0] = (ucurve[j+1][1] - ucurve[j][1])/(ucurve[j+1][0] - ucurve[j][0])*(wavelength[i] - ucurve[j][0]) + ucurve[j][1]
+            i += 1
+    i = int(round((log10(gcurve[0][0]) - beginwl)/0.0001))
+    for j in xrange(NG):
+        while wavelength[i] < gcurve[j+1][0]:
+            a[i][1] = (gcurve[j + 1][1] - gcurve[j][1]) / (gcurve[j+1][0]-gcurve[j][0]) * (wavelength[i] - gcurve[j][0]) + gcurve[j][1]
+            i += 1
+    i = int(round((log10(rcurve[0][0]) - beginwl)/0.0001))
+    for j in xrange(NR):
+        while wavelength[i] < rcurve[j+1][0]:
+            a[i][2] = (rcurve[j + 1][1] - rcurve[j][1]) / (rcurve[j+1][0]-rcurve[j][0]) * (wavelength[i] - rcurve[j][0]) + rcurve[j][1]
+            i += 1
+    i = int(round((log10(icurve[0][0]) - beginwl)/0.0001))
+    for j in xrange(NI):
+        while wavelength[i] < icurve[j+1][0]:
+            a[i][3] = (icurve[j + 1][1] - icurve[j][1]) / (icurve[j+1][0]-icurve[j][0]) * (wavelength[i] - icurve[j][0]) + icurve[j][1]
+            i += 1
+    i = int(round((log10(zcurve[0][0]) - beginwl)/0.0001))
+    for j in xrange(NZ):
+        while wavelength[i] < zcurve[j+1][0]:
+            a[i][4] = (zcurve[j + 1][1] - zcurve[j][1]) / (zcurve[j+1][0]-zcurve[j][0]) * (wavelength[i] - zcurve[j][0]) + zcurve[j][1]
+            i += 1
+
+    #TODO: close colorcurves
+    return a
+
+def colors(spec, a):
+    
+    npix = 5763
+    beginwl = 3.4742
+    usum = gsum = rsum = isum = zsum = 0
+    j = int(round((log10(spec.wave[0]) - beginwl)/0.0001))
+    i = 0
+    while i < spec.npix and j < npix:
+        usum += a[j][0] * spec.flux[i]
+        gsum += a[j][1] * spec.flux[i]
+        rsum += a[j][2] * spec.flux[i]
+        isum += a[j][3] * spec.flux[i]
+        zsum += a[j][4] * spec.flux[i]
+        i += 1
+        j += 1
+        
+    if usum > 0 and gsum > 0 and rsum > 0 and isum > 0 and zsum > 0:
+        spec.smag.append(22.5 - 2.5 * log10(usum))
+        spec.smag.append(22.5 - 2.5 * log10(gsum))
+        spec.smag.append(22.5 - 2.5 * log10(rsum))
+        spec.smag.append(22.5 - 2.5 * log10(isum))
+        spec.smag.append(22.5 - 2.5 * log10(zsum))
+    else:
+        spec.smag.append(0)
+        spec.smag.append(0)
+        spec.smag.append(0)
+        spec.smag.append(0)
+        spec.smag.append(0)
+
+    # What to do with invalid values? 
+
+
+################################################################################
+############################## Powerlaw ########################################
+################################################################################
+    
+
+def find_element_larger_in_arrays(wave, target_wave, npix):
+    # Function which takes in a wavelength array wave and a target wavelength
+    # It searches for the i-th element in wave, which is the first element
+    # bigger than target_wave. 
+    # Note: i is always larger than target_wave! If smaller than target_wave is 
+    # wanted, take returnvalue - 1
+    # TODO: Understand exactly how it works :) and think of a way to catch 
+    # exception 
+#    i = next(x[0] for x in enumerate(wave) if x[1] > target_wave)
+    i = 0
+    while True:
+        if i < npix and wave[i] < target_wave:
+            i += 1
+        else:
+            break
+    return i
+
+def fit_powerlaw(spec):
+    emfree = []
+    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0]])
+    emfree_regions_num = 4
+    wave_log = []
+    flux_log = []
+    flux_error_log = []
+    spec.alpha = spec.alpha_error= spec.beta = spec.delta = -999
+    emfree_regions_data = 0
+
+    # Initialise spectrum's emfree matrix:
+    spec.emfree = np.zeros((3,4))
+    for i in xrange(emfree_regions_num):
+        spec.emfree[0][i] = (1.0 + spec.z)*0.5*(emfree[i][0] + emfree[i][1])
+        spec.emfree[1][i] = 0.0
+        spec.emfree[2][i] = -1.0
+
+        # Find the element in the wavelength array, which is larger / smaller 
+        # than the beginning / end of the emission free region
+        wave_em_interval_start = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i][0], spec.npix)
+        # the -1 at the end takes into account, that the function always returns the bigger
+        # value.
+        # TODO: Check why siqr not the same as in C code and median neither.
+        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i][1], spec.npix) - 1
+        # Calculate 75 and 25 percentile in order to calculate the semi-interquantile range
+        percentile75 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 75)
+        percentile25 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 25)
+        siqr = (percentile75 - percentile25)/2
+        median = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 50)
+
+        spec.emfree[1][i] = median
+        spec.emfree[2][i] = siqr/(wave_em_interval_end - wave_em_interval_start)
+        if spec.emfree[1][i] > 0 and spec.emfree[2][i] > 0:
+            wave_log.append(log10(spec.emfree[0][i]))
+            flux_log.append(log10(spec.emfree[1][i]))
+            flux_error_log.append(log10(1.0 + spec.emfree[2][i]/spec.emfree[1][i]))
+            emfree_regions_data += 1
+        
+    # Fit a linear function to the log data:
+    # define our (line) fitting function
+    def func(x, a, b):
+        return a*x + b
+    if emfree_regions_data == 4:
+        # coeff: fitting parameters
+        # pcov: covariance matrix, used to retrieve error for alpha.
+        coeff, pcov = optimize.curve_fit(func, wave_log, flux_log, sigma=flux_error_log)
+
+#        print "fitting: ", coeff, pcov
+        spec.beta = coeff[0]
+        spec.alpha = -spec.beta - 2
+        spec.delta = coeff[1]
+        spec.alpha_error = sqrt(pcov[0][0])
+
+        for i in xrange(spec.npix):
+            spec.powerlaw.append(10.0**(coeff[1] + coeff[0]*log10(spec.wave[i])))
+
+    else:
+        spec.beta = 0
+        spec.alpha = 0
+        spec.delta = 0
+        spec.alpha_error = 0
+        for i in xrange(spec.npix):
+            spec.powerlaw.append(0)    
+            # Think about if 0 is a good value (currently checked in build_compspec)
+
+    
+    # TODO: values differ from c program!
+    
+################################################################################
+############################## Compspec ########################################
+################################################################################
+    
+def build_compspec(cspec, spec):
+    # Neglect 'goodpix' check for now. Only implement actual summation:
+    # Does this mess it up?
+
+    # Define Restrange array:
+    Restrange = []
+    # 
+    Restrange = np.array([[1095,1150],[982,1010],[955,968],[912,947]])
+
+    # Set the interval bounds of the QSO wavelengths, which are used
+    if (spec.z + 1)*Restrange[0][0] > spec.wave[0]:
+        spec.lambmin = (spec.z + 1)*Restrange[0][0]
+    else:
+        spec.lambmin = spec.wave[0]
+    spec.lambmax = (spec.z + 1)*Restrange[0][1]
+
+    if spec.lambmax < spec.wave[0]:
+        return 9
+
+    # First: align cspec arrays with spec arrays:
+    # TODO: HAVE to include lambmin and lambmax...
+    iterator = find_element_larger_in_arrays(spec.wave, cspec.wave[0], spec.npix)
+    citerator = find_element_larger_in_arrays(cspec.wave, spec.wave[0], spec.npix)
+    for i in xrange(1, spec.npix - iterator - 1):
+        #        if spec.powerlaw[i+iterator] > 0:
+        if(spec.wave[i+iterator]                             != 0             and
+           spec.wave[i+iterator] + spec.wave[i+iterator - 1] > 2*spec.lambmin and
+           spec.wave[i+iterator] + spec.wave[i+iterator + 1] < 2*spec.lambmax and
+           isnan(spec.flux[i+iterator])                      == 0             and
+           isnan(spec.flux_error[i+iterator])                == 0             and
+           spec.flux_error[i+iterator]                       != 0             and
+           spec.powerlaw[i+iterator]                         != 0):
+            cspec.sum[i+citerator] += spec.flux[i+iterator]/spec.powerlaw[i+iterator]
+            cspec.sum2[i+citerator] += (spec.flux[i+iterator]/spec.powerlaw[i+iterator])**2
+            cspec.nhist[i+citerator] += 1
+        else: 
+            continue
+        if spec.wave[i+iterator] + spec.wave[i+iterator + 1] > 2*spec.lambmax: 
+            break
+            
+    return 0
+
+
+def statistics(cspec, spec):
+
+    for i in xrange(3000):
+#        print "length: ", i, len(cspec.sum), len(cspec.nhist), len(cspec.sum2), len(cspec.flux)
+        if cspec.sum[i] > 0 and cspec.nhist[i] > 0 and cspec.sum2[i] > 0:
+            print "cspec: sum and nhist", cspec.sum[i], cspec.nhist[i]
+            cspec.flux.append(cspec.sum[i]/cspec.nhist[i])
+            cspec.flux_error.append(cspec.sum2[i]/cspec.nhist[i] - cspec.flux[i]**2)
+            if cspec.nhist[i] > 1:
+                cspec.flux_error[i] = sqrt(cspec.flux_error[i]/(cspec.nhist[i] - 1))
+            else:
+                cspec.flux_error[i] = 0
+        else:
+            cspec.flux.append(0)
+            cspec.flux_error.append(0)
+
+################################################################################
+############################## Output ##########################################
+################################################################################
+
+def build_fits_file(cspec, spec, outfile):
+    i = 0
+    coeff1 = 0.0001
+    while cspec.nhist == 0:
+        i += 1
+    sidx = i
+    npix = 0
+
+    hdu0_row1 = []
+    hdu0_row2 = []
+    hdu0_row3 = []
+    for i in xrange(sidx, 3000):
+        if cspec.nhist[i] > 0:
+            npix = i+1
+
+    for i in xrange(npix):
+        hdu0_row1.append(1 - cspec.flux[sidx+i])
+        hdu0_row2.append(cspec.flux_error[sidx+i])
+        hdu0_row3.append(cspec.nhist[sidx+i])
+    zipped_hdu0 = zip(hdu0_row1, hdu0_row2, hdu0_row3)
+    zipped_hdu0 = np.transpose(zipped_hdu0)
+
+#    hdu = fits.PrimaryHDU(zipped_hdu0)
+    prihdr = fits.Header()
+    prihdr['COEFF0'] = log10(cspec.wave[sidx])
+    prihdr['COEFF1'] = coeff1
+    prihdr['CRVAL1'] = log10(cspec.wave[sidx])
+    prihdr['CD1_1'] = coeff1
+
+    hdu = fits.PrimaryHDU(zipped_hdu0, header=prihdr)
+    # hdu.writeto('test.fits')
+    hdulist = fits.HDUList([hdu])
+    hdulist.writeto(outfile, clobber=True)
+
+################################################################################
+############################## Classes #########################################
+################################################################################
+ 
+# Class for the spectra
+class spectrum:
+    def __init__(self):
+        self.beginwl = 0
+        self.deltawl = 0
+        self.lambmin = 0
+        self.lambmax = 0
+        self.cpix = 0
+        self.z = 0
+        # Fitting parameters
+        self.alpha = 0
+        self.alpha_error = 0
+        self.beta = 0
+        self.delta = 0
+        # Coordinates
+        self.ra = 0
+        self.dec = 0
+        self.npix = 0
+        self.flux = []
+        self.flux_error = []
+        self.powerlaw = []
+        self.powerlaw_error = []
+        self.wave = []
+        self.emfree = []             # Emission free regions array
+        self.mag = []
+        self.mag_error = []
+        self.smag = []
+        self.status = []
+        self.snr = []
+
+        self.filename = []
+        self.plateid = 0
+        self.fiberid = 0
+        self.MJD = 0
+
+# Class for the composite spectrum
+class comp_spectrum:
+    def __init__(self, npix):
+        self.wave = []
+        self.flux = []
+        self.flux_error = []
+        self.sum = []
+        self.sum2 = []
+        self.nhist = []
+        for i in xrange(npix):
+            self.sum.append(0)
+            self.sum2.append(0)
+            self.nhist.append(0)
+            self.wave.append(10.0**(3.58020 + 0.0001*i))
+
+#####################################################################################    
+############################### RUN THE PROGRAM #####################################
+#####################################################################################
+
+
+def main():
+    # Basic declarations
+    inputfile = open(sys.argv[1], 'r')
+    files = list(inputfile)
+    spectra = []
+    compspec = comp_spectrum(5763)
+    i = 0
+    a = create_colorcurves()
+    alpha_top = 1.5
+    alpha_low = -2
+    spectra_count = 0
+
+    # Read filename for the output FITS file:
+    outfile = raw_input('Give the name of the output FITS file: ')
+
+
+
+    # Start the loop over all files in the 
+    for i, file in enumerate(files):
+        print "Starting with spectrum #: ", i
+        spectra.append(spectrum())
+        filetype = check_filetype(file)
+        if filetype == 1:
+            read_spSpec(file, spectra[i])
+        if filetype == 2:
+            read_spec(file, spectra[i])
+
+        # Conditions on the QSOs:
+        if spectra[i].z > 2.2 and spectra[i].z < 5.3:
+            # Do stuff concerning dust corrections!
+
+            # Build the median array? Use: flux, continuum, npix,
+            # status
+            colors(spectra[i], a)
+            #powerlaw function
+            # alpha cut
+            # calculate comp spec
+            fit_powerlaw(spectra[i])
+            if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
+                if build_compspec(compspec, spectra[i]) == 0:
+                    spectra_count += 1
+        # Every 50th loop, we free all objects, which are not used anymore. 
+        # This function is called automatically, but not often enough. Reduces
+        # memory usage quite a lot.
+        if i % 50:
+            gc.collect()
+        # Free all big arrays, which won't be needed anymore, after this loop. 
+        # Unecessary memory usage.
+        del(spectra[i].flux)
+        del(spectra[i].flux_error)
+        del(spectra[i].wave)
+        del(spectra[i].powerlaw)
+        # increase loop variable, since we run over files and not an integer
+        i += 1
+	        
     
     statistics(compspec, spectra)
     build_fits_file(compspec, spectra, outfile)
