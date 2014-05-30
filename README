@@ -1,19 +1,10 @@
-This is the first version of the SDSScompspec program in Python, which 
-is capable of running on multiple cores. There is a single core and a
-multicore version of the program.
-Therefore the functions and the main program have been seperated.
-Single Core program:
-PyS_SDSScompspec
-Multi Core program:
-PyS_SDSScompspec_multicore
+This version is the first almost finished version. 
 
-They are still run by:
-./PyS_SDSScompspec <list file>
+The memory related problems are gone, fixed by removing unecessary 
+arrays after each loop. 
+Dust corrections have been implemented, which can be called if the
+program is run with the --dust flag.
 
-So far, in the multicore file the number of processes is set to 8, since 
-my computer has 4 physical cores with 8 threads.
-In the next version it will be possible to set the number of used cores 
-from the command line.
-
-The extrem memory usage has been mostly resolved, by freeing flux, flux_error,
-wave, and powerlaw arrays after each spectrum.
+Additionally statistics are calculated and all sorts of information
+is written to the header of the FITS file and the table 
+containing information about the QSOs is written as well.
