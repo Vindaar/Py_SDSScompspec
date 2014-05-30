@@ -1,13 +1,19 @@
-This is the first version of SDSS-Compspec in Python.
-It works similar to the C program, run with:
-./PyS_SDSS-compspec <list file>
+This is the first version of the SDSScompspec program in Python, which 
+is capable of running on multiple cores. There is a single core and a
+multicore version of the program.
+Therefore the functions and the main program have been seperated.
+Single Core program:
+PyS_SDSScompspec
+Multi Core program:
+PyS_SDSScompspec_multicore
 
+They are still run by:
+./PyS_SDSScompspec <list file>
 
-It creates the an output FITS file, containing the opacities, its errors and the number of contributing QSOs for each pixel.
+So far, in the multicore file the number of processes is set to 8, since 
+my computer has 4 physical cores with 8 threads.
+In the next version it will be possible to set the number of used cores 
+from the command line.
 
-Some things are still hardcoded (some constants).
-
-Main problems:
-It is a lot slower than its C counterpart
-and
-it uses a ton of memory, because big arrays are not given back to the system, after they are useful.
+The extrem memory usage has been mostly resolved, by freeing flux, flux_error,
+wave, and powerlaw arrays after each spectrum.
