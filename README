@@ -1,4 +1,0 @@
-Second version of SDSScompspec in Python.
-
-First working version. Only outputs bare minimum into output FITS file,
-contains no dust corrections and has memory problems.
