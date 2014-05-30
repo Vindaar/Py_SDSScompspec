@@ -385,6 +385,7 @@ def fit_powerlaw(spec):
     emfree_regions_num = 4
     # create emtpy lists for the log wavelength, log flux and error data
     # TODO: think if lists should be numpy arrays instead!
+#    wave_log = 
     wave_log = []
     flux_log = []
     flux_error_log = []
@@ -399,30 +400,30 @@ def fit_powerlaw(spec):
     for i in xrange(emfree_regions_num):
         # calculate the array containing the emission free regions
         # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
-        spec.emfree[0][i] = (1.0 + spec.z)*0.5*(emfree[i][0] + emfree[i][1])
-        spec.emfree[1][i] = 0.0
-        spec.emfree[2][i] = -1.0
+        spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
+        spec.emfree[1,i] = 0.0
+        spec.emfree[2,i] = -1.0
 
         # Find the element in the wavelength array, which is larger / smaller 
         # than the beginning / end of the emission free region
-        wave_em_interval_start = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i][0], spec.npix)
+        wave_em_interval_start = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,0], spec.npix)
         # the -1 at the end takes into account, that the function always returns the bigger
         # value.
         # TODO: Check why siqr not the same as in C code and median neither. (slight abbreviations)
-        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i][1], spec.npix) - 1
+        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,1], spec.npix) - 1
         # Calculate 75 and 25 percentile in order to calculate the semi-interquantile range
         percentile75 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 75)
         percentile25 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 25)
         siqr = (percentile75 - percentile25)/2
         median = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 50)
 
-        spec.emfree[1][i] = median
-        spec.emfree[2][i] = siqr/(wave_em_interval_end - wave_em_interval_start)
+        spec.emfree[1,i] = median
+        spec.emfree[2,i] = siqr/(wave_em_interval_end - wave_em_interval_start)
         # if usable values, append emfree regions to log data arrays
-        if spec.emfree[1][i] > 0 and spec.emfree[2][i] > 0:
-            wave_log.append(log10(spec.emfree[0][i]))
-            flux_log.append(log10(spec.emfree[1][i]))
-            flux_error_log.append(log10(1.0 + spec.emfree[2][i]/spec.emfree[1][i]))
+        if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
+            wave_log.append(log10(spec.emfree[0,i]))
+            flux_log.append(log10(spec.emfree[1,i]))
+            flux_error_log.append(log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i]))
             # count region als usable
             emfree_regions_data += 1
         
@@ -442,7 +443,7 @@ def fit_powerlaw(spec):
         spec.alpha = -spec.beta - 2
         spec.delta = coeff[1]
         try:
-            spec.alpha_error = float(sqrt(pcov[0][0]))
+            spec.alpha_error = float(sqrt(pcov[0,0]))
         except TypeError:
             print "Fitting problem"
 
