@@ -79,17 +79,27 @@ def read_spec(qso, spec):
 # assume logarithmic wavelength scale. Is used always I believe.?
     # run over all wavelengths (pixels) and set the wavelength array
     # as well as the status array and signal to noise ratio
-    for i in xrange(spec.npix):
-        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+    # wave, status and snr are all numpy arrays
+    spec.wave    = 10.0**(spec.beginwl + (np.arange(spec.npix) + 1 - spec.cpix)*spec.deltawl)
+    # use Numpy's logical operations, to determine the status array
+    spec.status  = spec.flux_error > 0
+    # determine snr by multiplying the arrays
+    spec.snr     = spec.flux / spec.flux_error
+
+
+    # old, more inefficient way of determining elements of status, snr and wave
+#    for i in xrange(spec.npix):
+#        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+
         # check if flux_error > 0, because normalisation in snr divides by it
-        if spec.flux_error[i] > 0: 
-            spec.status.append(1)
-            spec.snr.append(spec.flux[i] / spec.flux_error[i])
-        # if flux_error > 0 simply set status and error to 0
-        else:
-            spec.status.append(0)
-            spec.snr.append(0)
-    
+        # if spec.flux_error[i] > 0: 
+        #     spec.status.append(1)
+        #     spec.snr.append(spec.flux[i] / spec.flux_error[i])
+        # # if flux_error > 0 simply set status and error to 0
+        # else:
+        #     spec.status.append(0)
+        #     spec.snr.append(0)
+ 
     del(TableHDU1)
     del(TableHDU2)
     hdu.close()
@@ -125,14 +135,22 @@ def read_spSpec(qso, spec):
 # assume logarithmic wavelength scale. Is used always I believe.?
     # run over all wavelengths (pixels) and set the wavelength array
     # as well as the status array and signal to noise ratio
-    for i in xrange(spec.npix):
-        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
-        if spec.flux_error[i] > 0: 
-            spec.status.append(1)
-            spec.snr.append(spec.flux[i] / spec.flux_error[i])
-        else:
-            spec.status.append(0)
-            spec.snr.append(0)
+    # wave, status and snr are all numpy arrays
+    spec.wave    = 10.0**(spec.beginwl + (np.arange(spec.npix) + 1 - spec.cpix)*spec.deltawl)
+    # use Numpy's logical operations, to determine the status array
+    spec.status  = spec.flux_error > 0
+    # determine snr by multiplying the arrays
+    spec.snr     = spec.flux / spec.flux_error
+
+
+    # for i in xrange(spec.npix):
+    #     spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+    #     if spec.flux_error[i] > 0: 
+    #         spec.status.append(1)
+    #         spec.snr.append(spec.flux[i] / spec.flux_error[i])
+    #     else:
+    #         spec.status.append(0)
+    #         spec.snr.append(0)
 
     del(ImageData)
     hdu.close()
@@ -204,8 +222,9 @@ def create_colorcurves():
     beginwl = 3.4742
     wavelength = []
     a = []
-    for i in xrange(npix):
-        wavelength.append(10.0**(beginwl + 0.0001*i))
+    wavelength = 10.0**(beginwl + 0.0001*np.arange(npix))
+#    for i in xrange(npix):
+#        wavelength.append(10.0**(beginwl + 0.0001*i))
     # Create arrays, which are to store the color curves
     ucurve = []
     gcurve = []
@@ -379,6 +398,7 @@ def fit_powerlaw(spec):
     spec.emfree = np.zeros((3,4))
     for i in xrange(emfree_regions_num):
         # calculate the array containing the emission free regions
+        # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
         spec.emfree[0][i] = (1.0 + spec.z)*0.5*(emfree[i][0] + emfree[i][1])
         spec.emfree[1][i] = 0.0
         spec.emfree[2][i] = -1.0
@@ -436,9 +456,8 @@ def fit_powerlaw(spec):
         spec.alpha = 0
         spec.delta = 0
         spec.alpha_error = 0
-        for i in xrange(spec.npix):
-            spec.powerlaw.append(0)    
-            # Think about if 0 is a good value (currently checked in build_compspec)
+        spec.powerlaw = np.zeros(spec.npix)
+        # Think about if 0 is a good value (currently checked in build_compspec)
 
     
     del(spec.emfree)
