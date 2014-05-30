@@ -59,7 +59,9 @@ def read_spec(qso, spec):
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
     TableHDU1 = hdu[1].data
     spec.flux = TableHDU1['flux'].copy()
-    spec.flux_error = TableHDU1['ivar'].copy()
+    # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
+    # Need to copy data?
+    spec.flux_error = sqrt(1/TableHDU1['ivar'])
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     TableHDU2 = hdu[2].data
