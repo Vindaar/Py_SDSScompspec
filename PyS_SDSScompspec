@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+
+# Import used modules
+# numpy: used for data storage etc.
+import numpy as np
+# gc contains gc.collect(), which is the function to collect all 
+# unused memory (called automatically, just want to call it slightly
+# more often
+import gc
+# import sys
+# from matplotlib import rc
+# import math
+# # the multiprocessing module
+import multiprocessing as mp
+from guppy import hpy
+
+from SDSSmodules import *
+
+# HDU numbers in this file are given starting from 0, since it is
+# conform with astropy, although the FITS standard starts from 1!
+
+
+#####################################################################################    
+############################### RUN THE PROGRAM #####################################
+#####################################################################################
+
+def main():
+    # Create settings object, which store flags, which are set on program start
+    settings = program_settings()
+
+    # Read in filename and settings from command line
+    if len(sys.argv) > 1:
+        inputfile = open(sys.argv[1], 'r')
+    else:
+        help()
+        return 0
+
+    for i in xrange(len(sys.argv)):
+        if sys.argv[i] == '--dust':
+            settings.dust = 1
+        else:
+            settings.dust = 0
+        if sys.argv[i] == ('-h' or '--help'):
+            help()
+            return 0
+
+    # Basic declarations
+    files = list(inputfile)
+    dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+    spectra = np.array([spectrum() for i in xrange(len(files))])
+    compspec = comp_spectrum(5763)
+    i = 0
+    a = create_colorcurves()
+    alpha_top = 1.5
+    alpha_low = -2
+    spectra_count = 0
+    # memory analysis:
+
+    # Read filename for the output FITS file:
+    outfile = raw_input('Give the name of the output FITS file: ')
+
+    # Start the loop over all files in the 
+    for i, file in enumerate(files):
+        print "Starting with spectrum #: ", i
+        filetype = check_filetype(file)
+        if filetype == 1:
+            read_spSpec(file, spectra[i])
+        if filetype == 2:
+            read_spec(file, spectra[i])
+
+        # Conditions on the QSOs:
+        if spectra[i].z > 2.2 and spectra[i].z < 5.3:
+            # Dust corrections. Only done, if --dust flag is set on startup
+            if settings.dust == 1:
+                get_Ebv(spectra[i], dustmap)
+                Gal_extinction_correction(spectra[i])
+
+            # Build the median array? Use: flux, continuum, npix,
+            # status
+            colors(spectra[i], a)
+            #powerlaw function
+            fit_powerlaw(spectra[i])
+            # alpha cut
+            if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
+                # calculate comp spec
+                if build_compspec(compspec, spectra[i]) == 0:
+                    compspec.spectra_count += 1
+        # Every 50th loop, we free all objects, which are not used anymore. 
+        # This function is called automatically, but not often enough. Reduces
+        # memory usage quite a lot.
+        if i % 50 == 0:
+            gc.collect()
+        # Free all big arrays, which won't be needed anymore, after this loop. 
+        # Unecessary memory usage.
+        del(spectra[i].flux)
+        del(spectra[i].flux_error)
+        del(spectra[i].wave)
+        del(spectra[i].powerlaw)
+        del(spectra[i].status)
+        del(spectra[i].snr)
+        # increase loop variable, since we run over files and not an integer
+        i += 1
+	        
+    statistics(compspec, spectra)
+    build_fits_file(compspec, spectra, outfile, settings)
+    print "Spectra used: ", compspec.spectra_count, "/", len(files)
+
+if __name__ == "__main__":
+    main()
+
+
+################################# END OF THE PROGRAM #################################
