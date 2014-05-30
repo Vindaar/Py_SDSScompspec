@@ -67,7 +67,7 @@ def main():
             read_spSpec(file, spectra[i])
         if filetype == 2:
             read_spec(file, spectra[i])
-
+        
         # Conditions on the QSOs:
         if spectra[i].z > 2.2 and spectra[i].z < 5.3:
             # Dust corrections. Only done, if --dust flag is set on startup
@@ -101,8 +101,8 @@ def main():
         # increase loop variable, since we run over files and not an integer
         i += 1
 	        
-    statistics(compspec, spectra)
-    build_fits_file(compspec, spectra, outfile, settings)
+#    statistics(compspec, spectra)
+#    build_fits_file(compspec, spectra, outfile, settings)
     print "Spectra used: ", compspec.spectra_count, "/", len(files)
 
 if __name__ == "__main__":

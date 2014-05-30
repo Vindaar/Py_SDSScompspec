@@ -19,6 +19,7 @@ from astropy import units as u
 # contains function to call date and time
 from datetime import datetime
 
+import fitsio
 
 # HDU numbers in this file are given starting from 0, since it is
 # conform with astropy, although the FITS standard starts from 1!
@@ -40,43 +41,48 @@ def read_spec(qso, spec):
 
     #Open FITS file
     hdu = fits.open(qso)
-    #Read in all necessary information from Header of
-    spec.plateid = hdu[0].header['PLATEID']
-    spec.fiberid = hdu[0].header['FIBERID']
-    spec.MJD = hdu[0].header['MJD']
+    # Read in all necessary information from Header of
+    # defining hdu0header is faster than accessing hdu[0].header each time
+    hdu0header = hdu[0].header
+
+    spec.plateid = hdu0header['PLATEID']
+    spec.fiberid = hdu0header['FIBERID']
+    spec.MJD = hdu0header['MJD']
 
     # Coordinates:
-    ra = hdu[0].header['PLUG_RA']
-    dec = hdu[0].header['PLUG_DEC']
+    ra = hdu0header['PLUG_RA']
+    dec = hdu0header['PLUG_DEC']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
     
-    spec.beginwl = hdu[0].header['COEFF0']
-    spec.deltawl = hdu[0].header['COEFF1']
+    spec.beginwl = hdu0header['COEFF0']
+    spec.deltawl = hdu0header['COEFF1']
     # Can't find cpix in header, assume it's 1.
     spec.cpix = 1
-    spec.npix = hdu[1].header['NAXIS2']
+    # defining hdu1 variable is faster than accessing hdu[1] each time
+    hdu1 = hdu[1]
+    spec.npix = hdu1.header['NAXIS2']
     # Get the table data from HDU 1; it contains the flux
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
-    TableHDU1 = hdu[1].data
+    TableHDU1 = hdu1.data
     spec.flux = TableHDU1['flux'].copy()
+
+
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
-    # Need to copy data?
+    # TODO: Check if need to copy data?
     spec.flux_error = sqrt(1/TableHDU1['ivar'])
+
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     TableHDU2 = hdu[2].data
     spec.z = float(TableHDU2['Z'])
+    #spec.z = hdu[2].data['Z']
 
     #magnitudes not needed for now. Did they cause memory overhead? 
     # TODO: check that!
-#    spec.mag = TableHDU2['PSFMAG'].copy()
+    # spec.mag = TableHDU2['PSFMAG'].copy()
 
-#TODO: Read in primary target information?
+    #TODO: Read in primary target information?
 
-
-    # Call function which converts ra and dec to galactic coordinates
-
-# assume logarithmic wavelength scale. Is used always I believe.?
     # run over all wavelengths (pixels) and set the wavelength array
     # as well as the status array and signal to noise ratio
     # wave, status and snr are all numpy arrays
@@ -86,10 +92,9 @@ def read_spec(qso, spec):
     # determine snr by multiplying the arrays
     spec.snr     = spec.flux / spec.flux_error
 
-
     # old, more inefficient way of determining elements of status, snr and wave
-#    for i in xrange(spec.npix):
-#        spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
+    #for i in xrange(spec.npix):
+        # spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
 
         # check if flux_error > 0, because normalisation in snr divides by it
         # if spec.flux_error[i] > 0: 
@@ -111,28 +116,27 @@ def read_spSpec(qso, spec):
     #Open FITS file
     hdu = fits.open(qso)
     #Read in all necessary information from Header of HDU 0:
-    spec.plateid = hdu[0].header['PLATEID']
-    spec.fiberid = hdu[0].header['FIBERID']
-    spec.MJD = hdu[0].header['MJD']
-    spec.z = hdu[0].header['Z']
-    spec.mag = hdu[0].header['MAG']
+    hdu0header = hdu[0].header
+    spec.plateid = hdu0header['PLATEID']
+    spec.fiberid = hdu0header['FIBERID']
+    spec.MJD = hdu0header['MJD']
+    spec.z = hdu0header['Z']
+    spec.mag = hdu0header['MAG']
 
     # Coordinates:
-    ra = hdu[0].header['RAOBJ']
-    dec = hdu[0].header['DECOBJ']
+    ra = hdu0header['RAOBJ']
+    dec = hdu0header['DECOBJ']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
 
-    spec.npix = hdu[0].header['NAXIS1']
-    spec.beginwl = hdu[0].header['CRVAL1']
-    spec.deltawl = hdu[0].header['CD1_1']
-    spec.cpix = hdu[0].header['CRPIX1']
-# Call a function which calculates galactic coordinates from ra and dec
+    spec.npix = hdu0header['NAXIS1']
+    spec.beginwl = hdu0header['CRVAL1']
+    spec.deltawl = hdu0header['CD1_1']
+    spec.cpix = hdu0header['CRPIX1']
     #Open ImageData from HDU 0 and thus retrieve the flux and the error
     ImageData = hdu[0].data.copy()
     spec.flux = ImageData[0, 0:spec.npix].copy()
     spec.flux_error = ImageData[1, 0:spec.npix].copy()
     
-# assume logarithmic wavelength scale. Is used always I believe.?
     # run over all wavelengths (pixels) and set the wavelength array
     # as well as the status array and signal to noise ratio
     # wave, status and snr are all numpy arrays
@@ -154,7 +158,6 @@ def read_spSpec(qso, spec):
 
     del(ImageData)
     hdu.close()
-# Do I need to divide ra by 15, like in C code? why is that done?
 # What is primary target flag needed for?
     
 
@@ -328,14 +331,23 @@ def colors(spec, a):
     usum = gsum = rsum = isum = zsum = 0
     j = int(round((log10(spec.wave[0]) - beginwl)/0.0001))
     i = 0
-    while i < spec.npix and j < npix:
-        usum += a[j][0] * spec.flux[i]
-        gsum += a[j][1] * spec.flux[i]
-        rsum += a[j][2] * spec.flux[i]
-        isum += a[j][3] * spec.flux[i]
-        zsum += a[j][4] * spec.flux[i]
-        i += 1
-        j += 1
+
+    # Calculate the sum of the color bands fluxes
+    # Commented code below is more obvious, but slower
+    usum = sum(a[j:spec.npix+j,0]*spec.flux)
+    gsum = sum(a[j:spec.npix+j,1]*spec.flux)
+    rsum = sum(a[j:spec.npix+j,2]*spec.flux)
+    isum = sum(a[j:spec.npix+j,3]*spec.flux)
+    zsum = sum(a[j:spec.npix+j,4]*spec.flux)
+
+    # while i < spec.npix and j < npix:
+    #     usum += a[j][0] * spec.flux[i]
+    #     gsum += a[j][1] * spec.flux[i]
+    #     rsum += a[j][2] * spec.flux[i]
+    #     isum += a[j][3] * spec.flux[i]
+    #     zsum += a[j][4] * spec.flux[i]
+    #     i += 1
+    #     j += 1
         
     if usum > 0 and gsum > 0 and rsum > 0 and isum > 0 and zsum > 0:
         spec.smag.append(22.5 - 2.5 * log10(usum))
@@ -386,9 +398,9 @@ def fit_powerlaw(spec):
     # create emtpy lists for the log wavelength, log flux and error data
     # TODO: think if lists should be numpy arrays instead!
 #    wave_log = 
-    wave_log = []
-    flux_log = []
-    flux_error_log = []
+    wave_log       = np.zeros(emfree_regions_num)
+    flux_log       = np.zeros(emfree_regions_num)
+    flux_error_log = np.zeros(emfree_regions_num)
     # set standard values for alpha, alpha_error, beta and delta
     spec.alpha = spec.alpha_error= spec.beta = spec.delta = -999
     # create a variable, which counts how many regions contain usable data
@@ -421,9 +433,9 @@ def fit_powerlaw(spec):
         spec.emfree[2,i] = siqr/(wave_em_interval_end - wave_em_interval_start)
         # if usable values, append emfree regions to log data arrays
         if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
-            wave_log.append(log10(spec.emfree[0,i]))
-            flux_log.append(log10(spec.emfree[1,i]))
-            flux_error_log.append(log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i]))
+            wave_log[i] = log10(spec.emfree[0,i])
+            flux_log[i] = log10(spec.emfree[1,i])
+            flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
             # count region als usable
             emfree_regions_data += 1
         
@@ -448,8 +460,7 @@ def fit_powerlaw(spec):
             print "Fitting problem"
 
         # use the fitted coefficients to calculate the powerlaw continuum
-        for i in xrange(spec.npix):
-            spec.powerlaw.append(10.0**(coeff[1] + coeff[0]*log10(spec.wave[i])))
+        spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
 
     # if we don't have 4 usable regions, set everything to 0
     else:
@@ -745,6 +756,7 @@ class spectrum:
         self.MJD = 0
 
 # Class for the composite spectrum
+# TODO: Think about switching to numpy arrays
 class comp_spectrum:
     def __init__(self, npix):
         self.wave          = []
