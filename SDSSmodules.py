@@ -63,18 +63,57 @@ def read_spec(qso, spec):
     spec.npix = hdu1.header['NAXIS2']
     # Get the table data from HDU 1; it contains the flux
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
-    TableHDU1 = hdu1.data
-    spec.flux = TableHDU1['flux'].copy()
+    #TableHDU1 = hdu1.data
+#    spec.flux = TableHDU1['flux'].copy()
+    qso = qso.strip()
+#    print qso
+#    fits2 = fitsio.FITS(qso)
 
+    #    TableHDU1 = fits2[1]['flux','ivar'][:]
+    TableHDU1 = fitsio.read(qso, columns=['flux', 'ivar'], ext='COADD')
+#    print TableHDU1.shape
+#    print TableHDU1
+#    print TableHDU1[10][0]
+#    print len(TableHDU1[:,0])
+#    print len(TableHDU1)/2
+#    i = np.arange(spec.npix)
+#    print i
+ #   spec.flux = TableHDU1[i][0]
+    spec.flux = np.zeros(spec.npix)
+    spec.flux_error = np.zeros(spec.npix)
+
+ #   i = np.arange(spec.npix)
+    #print i
+#    spec.flux = TableHDU1[i][0]
+    
+
+    for i in xrange(spec.npix):
+        spec.flux[i] = TableHDU1[i][0]
+        spec.flux_error[i] = sqrt(1/TableHDU1[i][1])
+
+#    print spec.flux[3]
+    
+#    TableNum = np.asarray(TableHDU1).reshape(-1,2)
+#    print TableNum[0]
+
+#    print TableNum[:,0]
+
+#    spec.flux = map((lambda TableHDU1, i: TableHDU1[i][0]), TableHDU1, range(spec.npix))
+#    spec.flux = TableNum
+#    print len(spec.flux)
+#    print len(spec.flux_error)
+#    spec.flux_error = TableHDU1[
+#    spec.flux_error = sqrt(1/TableHDU1[1].view(np.recarray))
 
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
-    spec.flux_error = sqrt(1/TableHDU1['ivar'])
+ #   spec.flux_error = sqrt(1/TableHDU1['ivar'])
 
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
-    TableHDU2 = hdu[2].data
-    spec.z = float(TableHDU2['Z'])
+#    TableHDU2 = hdu[2].data
+    spec.z = fitsio.read(qso, columns='Z', ext='SPALL')
+    #spec.z = float(TableHDU2['Z'])
     #spec.z = hdu[2].data['Z']
 
     #magnitudes not needed for now. Did they cause memory overhead? 
@@ -106,7 +145,7 @@ def read_spec(qso, spec):
         #     spec.snr.append(0)
  
     del(TableHDU1)
-    del(TableHDU2)
+#    del(TableHDU2)
     hdu.close()
 
 
@@ -713,73 +752,3 @@ def help():
     print "    --dust:    activates galactic dust corrections"
     print "    -h, --help: print this help"
 
-
-################################################################################
-############################## Classes #########################################
-################################################################################
- 
-# Class for the spectra
-class spectrum:
-    def __init__(self):
-        self.beginwl     = 0
-        self.deltawl     = 0
-        self.lambmin     = 0
-        self.lambmax     = 0
-        self.cpix        = 0
-        self.z           = 0
-        # Fitting parameters
-        self.alpha       = 0
-        self.alpha_error = 0
-        self.beta        = 0
-        self.delta       = 0
-        # Coordinates
-        # using astropy.coordinates object. Currently using v0.3.2 of astropy
-        # from v0.4 (in develeopment atm) on exchanged with SkyCoord. 
-        self.coordinates = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
-
-        self.npix           = 0
-        self.flux           = []
-        self.flux_error     = []
-        self.powerlaw       = [] 
-        self.powerlaw_error = []
-        self.wave           = []
-        self.emfree         = []         # Emission free regions array
-        self.mag            = []
-        self.mag_error      = []
-        self.smag           = []
-        self.status         = []
-        self.snr            = []
-
-        self.filename = []
-        self.plateid = 0
-        self.fiberid = 0
-        self.MJD = 0
-
-# Class for the composite spectrum
-# TODO: Think about switching to numpy arrays
-class comp_spectrum:
-    def __init__(self, npix):
-        self.wave          = []
-        self.flux          = []
-        self.flux_error    = []
-        self.sum           = []
-        self.sum2          = []
-        self.nhist         = []
-        self.spectra_count = 0
-        self.mean_a        = 0
-        self.sigma_a       = 0
-        self.median_a      = 0
-        self.siqr_a        = 0
-        for i in xrange(npix):
-            self.sum.append(0)
-            self.sum2.append(0)
-            self.nhist.append(0)
-            self.wave.append(10.0**(3.58020 + 0.0001*i))
-
-# Class for the program settings
-class program_settings:
-    def __init__(self):
-        self.dust         = 0
-        self.nprocs       = 0
-        self.program_name = 'PyS_SDSScompspec'
-        

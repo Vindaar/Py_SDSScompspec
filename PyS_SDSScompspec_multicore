@@ -15,6 +15,7 @@ import multiprocessing as mp
 from guppy import hpy
 
 from SDSSmodules import *
+from SDSSclasses import *
 
 # HDU numbers in this file are given starting from 0, since it is
 # conform with astropy, although the FITS standard starts from 1!
