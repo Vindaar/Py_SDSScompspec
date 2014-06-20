@@ -3,6 +3,11 @@
 import numpy as np
 from pylab import *
 
+from decimal import *
+import math
+
+
+
 # astropy is used to work with fits files
 from astropy.io import fits
 # re contains the function search, which is used to search for 
@@ -63,58 +68,19 @@ def read_spec(qso, spec):
     spec.npix = hdu1.header['NAXIS2']
     # Get the table data from HDU 1; it contains the flux
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
-    #TableHDU1 = hdu1.data
-#    spec.flux = TableHDU1['flux'].copy()
-    qso = qso.strip()
-#    print qso
-#    fits2 = fitsio.FITS(qso)
-
-    #    TableHDU1 = fits2[1]['flux','ivar'][:]
-    TableHDU1 = fitsio.read(qso, columns=['flux', 'ivar'], ext='COADD')
-#    print TableHDU1.shape
-#    print TableHDU1
-#    print TableHDU1[10][0]
-#    print len(TableHDU1[:,0])
-#    print len(TableHDU1)/2
-#    i = np.arange(spec.npix)
-#    print i
- #   spec.flux = TableHDU1[i][0]
-    spec.flux = np.zeros(spec.npix)
-    spec.flux_error = np.zeros(spec.npix)
-
- #   i = np.arange(spec.npix)
-    #print i
-#    spec.flux = TableHDU1[i][0]
-    
-
-    for i in xrange(spec.npix):
-        spec.flux[i] = TableHDU1[i][0]
-        spec.flux_error[i] = sqrt(1/TableHDU1[i][1])
-
-#    print spec.flux[3]
-    
-#    TableNum = np.asarray(TableHDU1).reshape(-1,2)
-#    print TableNum[0]
-
-#    print TableNum[:,0]
-
-#    spec.flux = map((lambda TableHDU1, i: TableHDU1[i][0]), TableHDU1, range(spec.npix))
-#    spec.flux = TableNum
-#    print len(spec.flux)
-#    print len(spec.flux_error)
-#    spec.flux_error = TableHDU1[
-#    spec.flux_error = sqrt(1/TableHDU1[1].view(np.recarray))
+    TableHDU1 = hdu1.data
+    spec.flux = TableHDU1['flux'].copy()
+    spec.flux
 
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
- #   spec.flux_error = sqrt(1/TableHDU1['ivar'])
+    spec.flux_error = sqrt(1/TableHDU1['ivar'])
 
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
-#    TableHDU2 = hdu[2].data
-    spec.z = fitsio.read(qso, columns='Z', ext='SPALL')
-    #spec.z = float(TableHDU2['Z'])
-    #spec.z = hdu[2].data['Z']
+    TableHDU2 = hdu[2].data
+    spec.z = hdu[2].data['Z'][0]
+    #print "%.15f" % spec.z
 
     #magnitudes not needed for now. Did they cause memory overhead? 
     # TODO: check that!
@@ -145,7 +111,7 @@ def read_spec(qso, spec):
         #     spec.snr.append(0)
  
     del(TableHDU1)
-#    del(TableHDU2)
+    del(TableHDU2)
     hdu.close()
 
 
@@ -454,6 +420,10 @@ def fit_powerlaw(spec):
         spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
         spec.emfree[1,i] = 0.0
         spec.emfree[2,i] = -1.0
+        # print emfree[i,0] + emfree[i,1]
+        # print "%.18f" % spec.z
+        # print spec.emfree, i
+        # print spec.emfree[0,i]
 
         # Find the element in the wavelength array, which is larger / smaller 
         # than the beginning / end of the emission free region
@@ -498,6 +468,10 @@ def fit_powerlaw(spec):
         except TypeError:
             print "Fitting problem"
 
+
+        print wave_log
+        print flux_log
+        print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
         # use the fitted coefficients to calculate the powerlaw continuum
         spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
 
