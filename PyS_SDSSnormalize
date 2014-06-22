@@ -1,0 +1,232 @@
+#!/usr/bin/env python
+
+# Import used modules
+# numpy: used for data storage etc.
+import numpy as np
+# gc contains gc.collect(), which is the function to collect all 
+# unused memory (called automatically, just want to call it slightly
+# more often
+import gc
+# import sys
+# from matplotlib import rc
+# import math
+# # the multiprocessing module
+import multiprocessing as mp
+from guppy import hpy
+
+from SDSSmodules import *
+from SDSSclasses import *
+
+# HDU numbers in this file are given starting from 0, since it is
+# conform with astropy, although the FITS standard starts from 1!
+
+
+#####################################################################################    
+############################### RUN THE PROGRAM #####################################
+#####################################################################################
+
+def strip_fits_filename(spec):
+    # returns the actual filename from the whole path of a FITS file
+
+    # Get the number of parts of the path, which are seperated by /
+    nsplits = len(spec.filename.split('/'))
+    
+    # Access the last part, since this is the actual filename
+    stripped_filename = spec.filename.split('/')[nsplits-1]
+
+    return stripped_filename
+
+
+def write_normalized_spectrum(spec, out_path, settings):
+
+    # Build the actual FITS output file
+    # set a few variables
+    npix = spec.npix
+    date_time = datetime.now()
+
+    # Unecessary
+    # hdu0_flux           = []
+    # hdu0_flux_error     = []
+    # hdu0_wave           = []
+    # hdu0_powerlaw       = []
+    # hdu0_powerlaw_error = []
+    # hdu0_flux_norm      = []
+    # hdu0_flux_norm_error= []
+
+
+    # Add a few header keys
+    prihdr = fits.Header()
+    prihdr['PROGRAM'] = settings.program_name
+    prihdr['AUTHOR']  = ('Sebastian Schmidt', 'derived from SDSScompspec C code by Jon Oullet')
+    prihdr['DATE']    = (date_time.strftime("%A, %d. %B %Y %I:%M%p"), 'Date created')
+    prihdr['ARRAY0']  = ('FLUX', 'Flux of the spectrum')
+    prihdr['ARRAY1']  = ('EFLUX', '1 Sigma of the flux')
+    prihdr['ARRAY2']  = ('WAVE', 'Wavelength of the spectrum')
+    prihdr['ARRAY3']  = ('PC', 'Powerlaw continuum of the spectrum')
+    prihdr['ARRAY4']  = ('NORMFL', 'Normalized flux')
+    prihdr['ARRAY5']  = ('ENORMFL', 'Error of normalized flux')
+    prihdr['VACUUM']  = (1, 'Wavelengths are in vacuum')
+    prihdr['DC_FLAG'] = (1, 'Log-Linear Flag')
+    prihdr['CRPIX1']  = (1, 'Starting pixel (1-indexed)')
+    prihdr['COEFF0']  = spec.beginwl
+    prihdr['COEFF1']  = spec.deltawl
+    prihdr['CRVAL1']  = spec.beginwl
+    prihdr['CD1_1']   = spec.deltawl
+    prihdr['NPIX']    = spec.npix
+    prihdr['PLUG_RA'] = spec.coordinates.ra.deg
+    prihdr['RAOBJ']   = spec.coordinates.ra.deg
+    prihdr['PLUG_DEC']= spec.coordinates.dec.deg
+    prihdr['DECOBJ']  = spec.coordinates.dec.deg
+    prihdr['l']       = spec.coordinates.galactic.l.deg
+    prihdr['b']       = spec.coordinates.galactic.b.deg
+    prihdr['DR']      = (10, 'SDSS Data release used')
+    prihdr['MJD']     = spec.MJD
+    prihdr['PLATEID'] = spec.plateid
+    prihdr['FIBERID'] = spec.fiberid
+    prihdr['ALPHA']   = spec.alpha
+    prihdr['EALPHA']  = spec.alpha_error
+    prihdr['ZEM']     = spec.z
+
+
+    # run over all pixels and append elements to new arrays
+    # calculation taken from build_fits_file
+    # for i in xrange(npix):
+    #     hdu0_flux.append(1 - cspec.flux[sidx+i])
+    #     hdu0_row2.append(cspec.flux_error[sidx+i])
+    #     hdu0_row3.append(cspec.nhist[sidx+i])
+
+
+    # zip arrays; will create one array of 3 tuples from the three
+    # individual arrays
+    zipped_hdu0 = zip(spec.flux, spec.flux_error, spec.wave, spec.powerlaw, spec.flux_norm, spec.flux_norm_error)
+    # currently wrong format, so we transpose the array
+    zipped_hdu0 = np.transpose(zipped_hdu0)
+
+    # create the Primary ouput HDU and print it to file
+    hdu = fits.PrimaryHDU(zipped_hdu0, header=prihdr)
+
+    # First call the function strip_fits_filename() which strips the filename
+    # from the whole path. Then strip further .fits from it.
+    filename_stripped = strip_fits_filename(spec).rstrip('.fits')
+    outfile = out_path + filename_stripped + '_normalized.fits'
+    # write to outfile and 'clobber=True' -> overwrite if existing
+    hdu.writeto(outfile, clobber=True)
+
+
+def main():
+    # Create settings object, which store flags, which are set on program start
+    settings = program_settings()
+    settings.program_name = 'PyS_SDSSnormalize'
+
+    # TODO: Change help() function :)
+
+    single_spec = 0
+    # Name of a single FITS spectrum file
+    input_fits = ''
+    # Name of an input list file containing FITS files
+    inputfile  = ''
+    # Read in filename and settings from command line
+    if len(sys.argv) > 1:
+        if (re.search('.fits', sys.argv[1]) or re.search('.fit', sys.argv[1])):
+            input_fits = sys.argv[1]
+            print 'hey'
+        else: 
+            inputfile = open(sys.argv[1], 'r')
+            print inputfile
+    else:
+        help()
+        return 0
+
+    for i in xrange(len(sys.argv)):
+        if sys.argv[i] == '--dust':
+            settings.dust = 1
+        else:
+            settings.dust = 0
+        if sys.argv[i] == ('-h' or '--help'):
+            help()
+            return 0
+        # if (re.search(sys.argv[i], '.fits') or re.search(sys.argv[i], '.fit')):
+        #     input_fits = sys.argv[i]
+        #     print 'hey'
+
+    # Basic declarations
+    files = list(inputfile)
+    dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+    spectra = np.array([spectrum() for i in xrange(len(files))])
+    i = 0
+    a = create_colorcurves()
+    spectra_count = 0
+    # memory analysis:
+
+    # Read filename for the output FITS file:
+    print "Each FITS file will be named <filename>_normalized.fits"
+    out_path = raw_input('Give the path to where the output files are to be stored: ')
+
+    if (input_fits == ''):
+        # Start the loop over all files in the input list file
+        for i, file in enumerate(files):
+            print "Starting with spectrum #: ", i
+            filetype = check_filetype(file)
+            spectra[i].filename = file
+            if filetype == 1:
+                read_spSpec(file, spectra[i])
+            if filetype == 2:
+                read_spec(file, spectra[i])
+
+            # Dust corrections. Only done, if --dust flag is set on startup
+            if settings.dust == 1:
+                get_Ebv(spectra[i], dustmap)
+                Gal_extinction_correction(spectra[i])
+
+            # Build the median array? Use: flux, continuum, npix,
+            # status
+            colors(spectra[i], a)
+            #powerlaw function
+            fit_powerlaw(spectra[i])
+
+            # Calculate the normalized spectrum and write the output file
+            spectra[i].flux_norm       = spectra[i].flux / spectra[i].powerlaw
+            spectra[i].flux_norm_error = spectra[i].flux_error / spectra[i].powerlaw
+            write_normalized_spectrum(spectra[i], out_path, settings)
+            
+            # This function is called automatically, but not often enough. Reduces
+            # memory usage quite a lot.
+            if i % 50 == 0:
+                gc.collect()
+            # Free all big arrays, which won't be needed anymore, after this loop. 
+            # Unecessary memory usage.
+            del(spectra[i].flux)
+            del(spectra[i].flux_error)
+            del(spectra[i].wave)
+            del(spectra[i].flux_norm)
+            del(spectra[i].flux_norm_error)
+            del(spectra[i].powerlaw)
+            del(spectra[i].status)
+            del(spectra[i].snr)
+            # increase loop variable, since we run over files and not an integer
+            i += 1     
+    else:
+        print "Starting with single spectrum: ", input_fits
+        filetype = check_filetype(input_fits)
+        normalized_spectrum = spectrum()
+        normalized_spectrum.filename = input_fits
+        if filetype == 1:
+            read_spSpec(input_fits, normalized_spectrum)
+        if filetype == 2:
+            read_spec(input_fits, normalized_spectrum)        
+        # Dust corrections. Only done, if --dust flag is set on startup
+        if settings.dust == 1:
+            get_Ebv(normalized_spectrum, dustmap)
+            Gal_extinction_correction(normalized_spectrum)
+        fit_powerlaw(normalized_spectrum)
+
+        # Calculate the normalized spectrum
+        normalized_spectrum.flux_norm = normalized_spectrum.flux / normalized_spectrum.powerlaw
+        normalized_spectrum.flux_norm_error = normalized_spectrum.flux_error / normalized_spectrum.powerlaw
+        write_normalized_spectrum(normalized_spectrum, out_path, settings)
+            
+if __name__ == "__main__":
+    main()
+
+
+################################# END OF THE PROGRAM #################################

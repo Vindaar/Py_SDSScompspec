@@ -35,6 +35,8 @@ class spectrum:
         self.flux_error     = []        # 1 sigma of flux
         self.powerlaw       = []        # powerlaw continuum
         self.powerlaw_error = []        # 1 sigma of p.c.
+        self.flux_norm      = []
+        self.flux_norm_error= []
         self.wave           = []        # wavelength 
         self.emfree         = []        # Emission free regions used for fitting
         self.mag            = []        # magnitudes in ugriz band

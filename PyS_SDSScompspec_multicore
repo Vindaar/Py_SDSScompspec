@@ -103,12 +103,15 @@ def main():
     settings = program_settings()
     settings.program_name = 'PyS_SDSScompspec_multicore'
 
+    inputfile = ''
+
     # Read in filename and settings from command line
     if len(sys.argv) > 1:
-        inputfile = open(sys.argv[1], 'r')
-    else:
-        help()
-        return 0
+        if (re.search('.fits', sys.argv[1]) or re.search('.fit', sys.argv[1])):
+            print "Working on single FITS files currently not supported."
+            return 0
+        else:
+            inputfile = open(sys.argv[1], 'r')
 
     for i in xrange(len(sys.argv)):
         if sys.argv[i] == '--dust':
