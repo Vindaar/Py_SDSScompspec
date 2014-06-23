@@ -394,6 +394,23 @@ def find_element_larger_in_arrays(wave, target_wave, npix):
             break
     return i
 
+
+def calc_siqr(flux, nmed):
+    # Function which calculates the 68% semi-interquartile range, in the exact same way
+    # as done in the C program.
+    # range_val is the range of the 68% semi-interquartile
+    range_val = int(0.341344746069*nmed)
+    # we sort the flux array
+    flux = np.sort(flux)
+    # and define the rounded half of the number of flux elements
+    sidx = int(nmed/2)
+    if nmed%2 == 0:
+        siqr = 0.25*(-flux[sidx - range_val - 1] - flux[sidx - range_val] + flux[sidx+range_val - 1] + flux[sidx+range_val])
+    elif nmed%2:
+        siqr = 0.5*(flux[sidx+range_val] - flux[sidx - range_val])
+    return siqr
+
+
 def fit_powerlaw(spec):
 # This function fits the powerlaw to the spectrum, by taking the emission free regions
 # emfree and fits a linear function to log-log flux- wavelength data
@@ -415,25 +432,14 @@ def fit_powerlaw(spec):
     emfree_regions_data = 0
 
     # Initialise spectrum's emfree matrix:
-    # Determine the size of the the emfree array and thus later the arrays
-    # containing the log data.
-    emarray_size = np.sum(emfree[:,1]) - np.sum(emfree[:,0])
-    spec.emfree = np.zeros((3,emarray_size))
-    # emfree_iter counts the element which are filled in
-    # spec.emfree[0,:]. Need to fill array with all wavelengths in
-    # those regions
-    emfree_iter = 0
+    spec.emfree = np.zeros((3,4))
     for i in xrange(emfree_regions_num):
         # calculate the array containing the emission free regions
         # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
-#        spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
-        for j in xrange(int(emfree[i,1] - emfree[i,0])):
-            spec.emfree[0, emfree_iter] = (1.0 + spec.z)*(emfree[i,0]+j)
-            emfree_iter += 1
+        spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
         spec.emfree[1,i] = 0.0
         spec.emfree[2,i] = -1.0
-#        print "emfree", emfree[i,0], emfree[i,1]
-        print spec.emfree[0,:]
+#        print spec.emfree[0,:]
         # print "%.18f" % spec.z
         # print spec.emfree, i
         # print spec.emfree[0,i]
@@ -444,15 +450,25 @@ def fit_powerlaw(spec):
         # the -1 at the end takes into account, that the function always returns the bigger
         # value.
         # TODO: Check why siqr not the same as in C code and median neither. (slight abbreviations)
-        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,1], spec.npix) - 1
-        # Calculate 75 and 25 percentile in order to calculate the semi-interquantile range
-        percentile75 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 75)
-        percentile25 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 25)
-        siqr = (percentile75 - percentile25)/2
+        # NOTE: Although the C program states to only use the element in the wavelength array that 
+        # is the last element smaller than (1+spec.z)*emfree[i,1], it uses the next one. Thus, for
+        # now, we neglect the - 1
+        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,1], spec.npix)# - 1
+        # define number of elements
+        nmed = wave_em_interval_end - wave_em_interval_start
+
+        # Calculation of semi-interquartile using built in numpy functions. I can't manage to get the
+        # same results as the C program by using them, so I implemented my own function
+        # The reason is probably how the elements are chosen. 
+        # in numpu 1.8 we can't choose different interpolations. Possible from 1.9
+        # percentile84 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 84)
+        # percentile16 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 16)
+        # siqr = (percentile84 - percentile16)/2.0
         median = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 50)
+        siqr = calc_siqr(spec.flux[wave_em_interval_start:wave_em_interval_end], nmed)
 
         spec.emfree[1,i] = median
-        spec.emfree[2,i] = siqr/(wave_em_interval_end - wave_em_interval_start)
+        spec.emfree[2,i] = siqr/np.sqrt(nmed)
         # if usable values, append emfree regions to log data arrays
         if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
             wave_log[i] = log10(spec.emfree[0,i])
@@ -460,12 +476,14 @@ def fit_powerlaw(spec):
             flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
             # count region as usable
             emfree_regions_data += 1
-        
+
     # Fit a linear function to the log data:
     # define our (line) fitting function
-    def func(x, a, b):
-        return a*x + b
-    # only continue, if 4 regions contain usable data
+    # using linfit we don't need our linear fitting function
+    # Linfit gives same results as optimize.curve now! 
+    # def func(x, a, b):
+    #    return a*x + b
+#    only continue, if 4 regions contain usable data
     if emfree_regions_data == 4:
         # fit linear function func to out log arrays
         # coeff: fitting parameters
@@ -483,9 +501,6 @@ def fit_powerlaw(spec):
         except TypeError:
             print "Fitting problem"
 
-#        print spec.emfree
-#        print wave_log
-#        print flux_log
         print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
         # use the fitted coefficients to calculate the powerlaw continuum
         spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
@@ -502,7 +517,7 @@ def fit_powerlaw(spec):
     
     del(spec.emfree)
     # TODO: values differ slightly from c program!
-    # probably because different fitting algorithm
+    # Fixed by implementing own siqr function.
     
 ################################################################################
 ############################## Compspec ########################################
