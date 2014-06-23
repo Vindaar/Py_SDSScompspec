@@ -107,7 +107,8 @@ def write_normalized_spectrum(spec, out_path, settings):
 
     # First call the function strip_fits_filename() which strips the filename
     # from the whole path. Then strip further .fits from it.
-    filename_stripped = strip_fits_filename(spec).rstrip('.fits')
+    filename_stripped = strip_fits_filename(spec).strip('\n')
+    filename_stripped = filename_stripped.rstrip('.fits')
     outfile = out_path + filename_stripped + '_normalized.fits'
     # write to outfile and 'clobber=True' -> overwrite if existing
     hdu.writeto(outfile, clobber=True)

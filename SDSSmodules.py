@@ -16,6 +16,8 @@ import re
 # optimize contains the fitting function we use to fit the linear 
 # function to the log-log spectrum data
 from scipy import optimize
+from linfit import linfit
+
 # obstools contains function to calculate E(B-V) based on Schlegel et. al dust maps
 from astropysics import obstools
 # contains astropy coordinate objects used to work with coordinates
@@ -413,14 +415,25 @@ def fit_powerlaw(spec):
     emfree_regions_data = 0
 
     # Initialise spectrum's emfree matrix:
-    spec.emfree = np.zeros((3,4))
+    # Determine the size of the the emfree array and thus later the arrays
+    # containing the log data.
+    emarray_size = np.sum(emfree[:,1]) - np.sum(emfree[:,0])
+    spec.emfree = np.zeros((3,emarray_size))
+    # emfree_iter counts the element which are filled in
+    # spec.emfree[0,:]. Need to fill array with all wavelengths in
+    # those regions
+    emfree_iter = 0
     for i in xrange(emfree_regions_num):
         # calculate the array containing the emission free regions
         # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
-        spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
+#        spec.emfree[0,i] = (1.0 + spec.z)*0.5*(emfree[i,0] + emfree[i,1])
+        for j in xrange(int(emfree[i,1] - emfree[i,0])):
+            spec.emfree[0, emfree_iter] = (1.0 + spec.z)*(emfree[i,0]+j)
+            emfree_iter += 1
         spec.emfree[1,i] = 0.0
         spec.emfree[2,i] = -1.0
-        # print emfree[i,0] + emfree[i,1]
+#        print "emfree", emfree[i,0], emfree[i,1]
+        print spec.emfree[0,:]
         # print "%.18f" % spec.z
         # print spec.emfree, i
         # print spec.emfree[0,i]
@@ -445,7 +458,7 @@ def fit_powerlaw(spec):
             wave_log[i] = log10(spec.emfree[0,i])
             flux_log[i] = log10(spec.emfree[1,i])
             flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
-            # count region als usable
+            # count region as usable
             emfree_regions_data += 1
         
     # Fit a linear function to the log data:
@@ -457,8 +470,10 @@ def fit_powerlaw(spec):
         # fit linear function func to out log arrays
         # coeff: fitting parameters
         # pcov: covariance matrix, used to retrieve error for alpha.
-        coeff, pcov = optimize.curve_fit(func, wave_log, flux_log, p0=(-2,5), sigma=flux_error_log)
+#        coeff, pcov = optimize.curve_fit(func, wave_log, flux_log, p0=(-2,5), sigma=flux_error_log)
 
+        coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
+        
         # assign coefficients to our spectrum
         spec.beta = coeff[0]
         spec.alpha = -spec.beta - 2
@@ -468,9 +483,9 @@ def fit_powerlaw(spec):
         except TypeError:
             print "Fitting problem"
 
-
-        print wave_log
-        print flux_log
+#        print spec.emfree
+#        print wave_log
+#        print flux_log
         print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
         # use the fitted coefficients to calculate the powerlaw continuum
         spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
