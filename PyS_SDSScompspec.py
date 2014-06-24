@@ -39,13 +39,10 @@ def main(args, settings = program_settings()):
     # is already given in settings object.
 
     # Read in filename and settings from command line
-    print "haha0"
     
     if args_check(args, settings) == 0:
-        print "haha"
         return 0
 
-    print "haha2"
 
     # Basic declarations
     files = list(settings.inputfile)

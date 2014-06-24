@@ -51,7 +51,7 @@ def read_inputfiles_and_sort_by_coords(settings, coord_map):
         for j in xrange(len(coord_map)):
             k = 0
             print spectra_tuple[i][1], spectra_tuple[i][2]
-            while spectra_tuple[k][1] > settings.l_min:
+            while spectra_tuple[k][1] < coord_map[:
                 k += 1
             print k
 #            spectra_map[i,j] = 
