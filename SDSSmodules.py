@@ -28,6 +28,8 @@ from datetime import datetime
 
 import fitsio
 
+from SDSSclasses import *
+
 # HDU numbers in this file are given starting from 0, since it is
 # conform with astropy, although the FITS standard starts from 1!
 
@@ -43,7 +45,7 @@ import fitsio
 ######################################################################################
 
 # Need resolving power of spectrum?
-def read_spec(qso, spec):
+def read_spec(qso, spec, settings):
 # Function whic is called to read spec FITS file
 
     #Open FITS file
@@ -60,6 +62,14 @@ def read_spec(qso, spec):
     ra = hdu0header['PLUG_RA']
     dec = hdu0header['PLUG_DEC']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+    # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
+    if settings.coords:
+        if (spec.coordinates.galactic.l.deg >= settings.l_min and
+            spec.coordinates.galactic.l.deg <= settings.l_max and
+            spec.coordinates.galactic.b.deg >= settings.b_min and
+            spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
+            # return 1 if we neglect this quasar
+            return 1
     
     spec.beginwl = hdu0header['COEFF0']
     spec.deltawl = hdu0header['COEFF1']
@@ -72,12 +82,10 @@ def read_spec(qso, spec):
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
     TableHDU1 = hdu1.data
     spec.flux = TableHDU1['flux'].copy()
-    spec.flux
 
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
     spec.flux_error = sqrt(1/TableHDU1['ivar'])
-
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     TableHDU2 = hdu[2].data
@@ -115,9 +123,10 @@ def read_spec(qso, spec):
     del(TableHDU1)
     del(TableHDU2)
     hdu.close()
+    return 0
 
 
-def read_spSpec(qso, spec):
+def read_spSpec(qso, spec, settings):
 # Function which is called to read spSpec FITS file
 
     #Open FITS file
@@ -126,15 +135,26 @@ def read_spSpec(qso, spec):
     hdu0header = hdu[0].header
     spec.plateid = hdu0header['PLATEID']
     spec.fiberid = hdu0header['FIBERID']
-    spec.MJD = hdu0header['MJD']
-    spec.z = hdu0header['Z']
-    spec.mag = hdu0header['MAG']
 
     # Coordinates:
     ra = hdu0header['RAOBJ']
     dec = hdu0header['DECOBJ']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+    # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
+    if settings.coords:
+        if (spec.coordinates.galactic.l.deg >= settings.l_min and
+            spec.coordinates.galactic.l.deg <= settings.l_max and
+            spec.coordinates.galactic.b.deg >= settings.b_min and
+            spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
+            # return 1 if we neglect this quasar
+            print spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg
+            print settings.l_min, settings.b_min
+            return 1
 
+
+    spec.MJD = hdu0header['MJD']
+    spec.z = hdu0header['Z']
+    spec.mag = hdu0header['MAG']
     spec.npix = hdu0header['NAXIS1']
     spec.beginwl = hdu0header['CRVAL1']
     spec.deltawl = hdu0header['CD1_1']
@@ -165,6 +185,7 @@ def read_spSpec(qso, spec):
 
     del(ImageData)
     hdu.close()
+    return 0
 # What is primary target flag needed for?
     
 
@@ -421,7 +442,6 @@ def fit_powerlaw(spec):
     emfree_regions_num = 4
     # create emtpy lists for the log wavelength, log flux and error data
     # TODO: think if lists should be numpy arrays instead!
-#    wave_log = 
     wave_log       = np.zeros(emfree_regions_num)
     flux_log       = np.zeros(emfree_regions_num)
     flux_error_log = np.zeros(emfree_regions_num)
@@ -464,19 +484,21 @@ def fit_powerlaw(spec):
         # percentile84 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 84)
         # percentile16 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 16)
         # siqr = (percentile84 - percentile16)/2.0
-        median = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 50)
-        siqr = calc_siqr(spec.flux[wave_em_interval_start:wave_em_interval_end], nmed)
-
-        spec.emfree[1,i] = median
-        spec.emfree[2,i] = siqr/np.sqrt(nmed)
-        # if usable values, append emfree regions to log data arrays
-        if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
-            wave_log[i] = log10(spec.emfree[0,i])
-            flux_log[i] = log10(spec.emfree[1,i])
-            flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
-            # count region as usable
-            emfree_regions_data += 1
-
+        
+        if nmed > 0:
+            median = np.median(spec.flux[wave_em_interval_start:wave_em_interval_end])
+            siqr = calc_siqr(spec.flux[wave_em_interval_start:wave_em_interval_end], nmed)
+    
+            spec.emfree[1,i] = median
+            spec.emfree[2,i] = siqr/np.sqrt(nmed)
+            # if usable values, append emfree regions to log data arrays
+            if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
+                wave_log[i] = log10(spec.emfree[0,i])
+                flux_log[i] = log10(spec.emfree[1,i])
+                flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
+                # count region as usable
+                emfree_regions_data += 1
+    
     # Fit a linear function to the log data:
     # define our (line) fitting function
     # using linfit we don't need our linear fitting function
@@ -497,7 +519,8 @@ def fit_powerlaw(spec):
         spec.alpha = -spec.beta - 2
         spec.delta = coeff[1]
         try:
-            spec.alpha_error = float(sqrt(pcov[0,0]))
+            # C program seems to take variance as error. Normally would take sqrt of pcov.
+            spec.alpha_error = float(pcov[0,0])
         except TypeError:
             print "Fitting problem"
 
@@ -743,6 +766,72 @@ def build_fits_file(cspec, spec, outfile, settings):
 
 
 ################################################################################
+############################## Input / Argschecks ##############################
+################################################################################
+
+def args_check(args, settings):
+    # Function which checks for command line arguments
+    
+    if len(args) > 0:
+        if (re.search('.fits', args[0]) or re.search('.fit', args[0])):
+            print "Working on single FITS files currently not supported."            
+            print "Please provide a file containing a list of FITS files."
+            return 0
+        else:
+            # TODO: include exception handling for wrong files?
+            settings.inputfile = open(args[0], 'r')
+    else:
+        help()
+        return 0
+
+    if '--dust' in args:
+        settings.dust = 1
+    else:
+        settings.dust = 0
+    if '--coords' in args:
+        print args
+        i = args.index('--coords')
+        print i, args
+        try:
+            settings.l_min  = float(args[i+1])
+            settings.b_min  = float(args[i+2])
+            settings.l_max  = float(args[i+3])
+            settings.b_max  = float(args[i+4])
+            settings.coords = 1
+        except IndexError:
+            print 'Error: Full set of coordinates have to be provided in the following way:'
+            print 'l_min b_min l_max b_max'
+
+    if ('-h' or '--help') in args:
+        help()
+        return 0
+    if '-o' in args:
+        i = args.index('o')
+        try:
+            settings.outfile = args[i+1]
+        except IndexError:
+            print "Error: if -o, --output is set, need to provide an output file name!"
+            return 0
+    if '--output' in args:
+        i = args.index('--output')
+        try:
+            settings.outfile = args[i+1]
+        except IndexError:
+            print "Error: if -o, --output is set, need to provide an output file name!"
+            return 0
+    if '--cspec' in args:
+        settings.cspec = 1
+    if '--nprocs' in args:
+        i = args.index('--nprocs')
+        try:
+            settings.nprocs = eval(args[i+1])
+        except IndexError:
+            print "Error: if --nprocs is set, need to provide number of processes to use!"
+            return 0
+
+
+
+################################################################################
 ############################## Help screen #####################################
 ################################################################################
 
@@ -753,6 +842,12 @@ def help():
     print "Usage:"
     print "./PyS_SDSScompspec <input list file> --options"
     print "possible options:"
-    print "    --dust:    activates galactic dust corrections"
-    print "    -h, --help: print this help"
+    print "    --dust:       activates galactic dust corrections"
+    print "    -o, --output: provide name for output FITS file"
+    print "    --coords:     input a cut on galactic coordinates in degrees"
+    print "                  provide in the following way:"
+    print "                  l_min b_min l_max b_max"
+    print "    --cspec:      activates return of compspec object at the end" 
+    print "                  of the program."  
+    print "    -h, --help:   print this help"
 

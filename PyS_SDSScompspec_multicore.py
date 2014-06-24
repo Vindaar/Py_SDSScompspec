@@ -98,44 +98,24 @@ def file_loop(files, compspec, start_iter, end_iter, out_q, out_q2, settings):
     out_q.put(spectra)
     out_q2.put(compspec)
 
-def main():
+def main(args, settings = program_settings()):
     # Create settings object, which saves settings set on start
-    settings = program_settings()
     settings.program_name = 'PyS_SDSScompspec_multicore'
 
-    inputfile = ''
+# Read in filename and settings from command line
+    if args_check(args, settings) == 0:
+        return 0
 
-    # Read in filename and settings from command line
-    if len(sys.argv) > 1:
-        if (re.search('.fits', sys.argv[1]) or re.search('.fit', sys.argv[1])):
-            print "Working on single FITS files currently not supported."
-            return 0
-        else:
-            inputfile = open(sys.argv[1], 'r')
-
-    for i in xrange(len(sys.argv)):
-        if sys.argv[i] == '--dust':
-            settings.dust = 1
-        else:
-            settings.dust = 0
-        if sys.argv[i] == '--nprocs' and isnan(eval(sys.argv[i+1])) == 0:
-            settings.nprocs = eval(sys.argv[i+1])
-        elif settings.nprocs == 0:
-            settings.nprocs = 8
-        if sys.argv[i] == ('-h' or '--help'):
-            help()
-            return 0
-    
     print "The program will be run with", settings.nprocs, "subprocesses."
     # Basic declarations
     # Create a list of all files contained in input file; easier to work with
-    files = list(inputfile)
+    files = list(settings.inputfile)
     nspec = len(files)
     # Create a compspec object with 5763 pixels
     compspec = comp_spectrum(5763)
 
     # Read filename for the output FITS file:
-    outfile = raw_input('Give the name of the output FITS file: ')
+    settings.outfile = raw_input('Give the name of the output FITS file: ')
 
     # Two Queues are created, which are used for parallel processing. 
     # They will contain:
@@ -184,12 +164,13 @@ def main():
     # calculate some statistics, which will be printed to the output FITS file
     statistics(compspec_sum, result_spectra)
     # Create the ouput FITS file
-    build_fits_file(compspec_sum, result_spectra, outfile, settings)
+    build_fits_file(compspec_sum, result_spectra, settings.outfile, settings)
     print "Spectra used: ", compspec_sum.spectra_count, "/", nspec
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    main(sys.argv[1:])
 
 
 ################################# END OF THE PROGRAM #################################

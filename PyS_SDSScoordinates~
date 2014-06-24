@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+
+from PyS_SDSScompspec import *
+from PyS_SDSScompspec_multicore import *
+
+# contains astropy coordinate objects used to work with coordinates
+from astropy.coordinates import ICRS, Galactic
+from astropy import units as u
+
+def main():
+
+    delta_l = 0.1
+    delta_b = 0.1
+    
+    
+    PyS_SDSScompspec.main(sys.argv[1], l[i], b[i])
+
+        self.coordinates = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))

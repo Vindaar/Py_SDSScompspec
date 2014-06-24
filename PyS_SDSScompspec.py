@@ -25,34 +25,30 @@ from SDSSclasses import *
 ############################### RUN THE PROGRAM #####################################
 #####################################################################################
 
-def main():
-    # Create settings object, which store flags, which are set on program start
-    settings = program_settings()
+# TODO: put argcheck outside of function into SDSSmodule so that I don't have to do
+# it for both programs.
 
-    inputfile = ''
+def main(args, settings = program_settings()):
+    # Create settings object, which store flags, which are set on program start
+#    settings = program_settings()
+    # this way the settings argument should be optional. If we provide it in PyS_SDSScoordinates
+    # it should not be necessary here.
+
+    #TODO: IF we supply settings object. Then maybe check if we give input file
+    # IF we do that, simply bypass all args checks, since the assume that everything
+    # is already given in settings object.
 
     # Read in filename and settings from command line
-    if len(sys.argv) > 1:
-        if (re.search('.fits', sys.argv[1]) or re.search('.fit', sys.argv[1])):
-            print "Working on single FITS files currently not supported."
-            return 0
-        else:
-            inputfile = open(sys.argv[1], 'r')
-    else:
-        help()
+    print "haha0"
+    
+    if args_check(args, settings) == 0:
+        print "haha"
         return 0
 
-    for i in xrange(len(sys.argv)):
-        if sys.argv[i] == '--dust':
-            settings.dust = 1
-        else:
-            settings.dust = 0
-        if sys.argv[i] == ('-h' or '--help'):
-            help()
-            return 0
+    print "haha2"
 
     # Basic declarations
-    files = list(inputfile)
+    files = list(settings.inputfile)
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
     spectra = np.array([spectrum() for i in xrange(len(files))])
     compspec = comp_spectrum(5763)
@@ -64,16 +60,21 @@ def main():
     # memory analysis:
 
     # Read filename for the output FITS file:
-    outfile = raw_input('Give the name of the output FITS file: ')
+    if settings.outfile == '':
+        settings.outfile = raw_input('Give the name of the output FITS file: ')
 
     # Start the loop over all files in the 
     for i, file in enumerate(files):
         print "Starting with spectrum #: ", i
         filetype = check_filetype(file)
         if filetype == 1:
-            read_spSpec(file, spectra[i])
+            # If the return value is one, we do a check on coordinates and this 
+            # object is outside the wanted boundaries. Therefore neglect and continue
+            if read_spSpec(file, spectra[i], settings) == 1:
+                continue
         if filetype == 2:
-            read_spec(file, spectra[i])
+            if read_spec(file, spectra[i], settings) == 1:
+                continue
         
         # Conditions on the QSOs:
         if spectra[i].z > 2.2 and spectra[i].z < 5.3:
@@ -86,6 +87,7 @@ def main():
             # status
             colors(spectra[i], a)
             #powerlaw function
+            # TODO: check in powerlaw if QSO usable?
             fit_powerlaw(spectra[i])
             # alpha cut
             if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
@@ -109,11 +111,17 @@ def main():
         i += 1
 	        
     statistics(compspec, spectra)
-    build_fits_file(compspec, spectra, outfile, settings)
+    # TODO: change build_fits_file such that it reads outfile from settings object within function
+    build_fits_file(compspec, spectra, settings.outfile, settings)
     print "Spectra used: ", compspec.spectra_count, "/", len(files)
 
+    # If cspec flag is set, we return the compspec object to the program that called this function
+    if settings.cspec:
+        return compspec
+
 if __name__ == "__main__":
-    main()
+    import sys
+    main(sys.argv[1:])
 
 
 ################################# END OF THE PROGRAM #################################

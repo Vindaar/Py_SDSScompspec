@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+
+import PyS_SDSScompspec #main as SDSScompspec
+import PyS_SDSScompspec_multicore #main as SDSScompspec_multicore
+from SDSSclasses import *
+from SDSSmodules import check_filetype
+
+# contains astropy coordinate objects used to work with coordinates
+from astropy.coordinates import ICRS, Galactic
+from astropy import units as u
+from astropy.io import fits
+import numpy as np
+
+def read_inputfiles_and_sort_by_coords(settings, coord_map):
+
+#    print coord_map
+#    print coord_map[0]
+#    print coord_map[0][0]
+
+    files = list(settings.inputfile)
+    data_type = [('filename', 'S100'), ('l_deg', float), ('b_deg', float)]
+    spectra_tuple = np.ndarray((len(files)), dtype = data_type)
+    
+    for i, file in enumerate(files):
+        filetype = check_filetype(file)
+        hdu = fits.open(file)
+        hdu0header = hdu[0].header
+#        print file
+#        print i
+        if filetype == 2:
+            ra = hdu0header['PLUG_RA']
+            dec = hdu0header['PLUG_DEC']
+        if filetype == 1:
+            ra = hdu0header['RAOBJ']
+            dec = hdu0header['DECOBJ']
+        coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+        entry = (file, float(coordinates.galactic.l.deg), float(coordinates.galactic.b.deg))
+        spectra_tuple[i] = entry
+#        spectra_tuple[i][1] = float(coordinates.galactic.l.deg)
+#        spectra_tuple[i][2] = float(coordinates.galactic.b.deg)
+#        print len(spectra_tuple)
+        print spectra_tuple[i]
+        hdu.close()
+
+    spectra_tuple = np.sort(spectra_tuple, order=['l_deg','b_deg'])
+#    print spectra_tuple
+
+
+    spectra_map = np.ndarray(len(coord_map), dtype=object)
+    for i in xrange(len(coord_map)):
+        for j in xrange(len(coord_map)):
+            k = 0
+            print spectra_tuple[i][1], spectra_tuple[i][2]
+            while spectra_tuple[k][1] < coord_map[:
+                k += 1
+            print k
+#            spectra_map[i,j] = 
+            print spectra_map[i]
+
+
+# Switch to numpy arrays?
+    
+#    for i,j in 
+#    temp_array 
+
+    return spectra_tuple
+
+def main(args):
+
+    delta_l = 10
+    delta_b = delta_l / 2
+
+    l_boundary = 360
+    # use 180 and then substract 90 later?
+    b_boundary = 180
+
+    #TODO: --coords flag not all that necessary, since we can just create a settings object
+    # in here and pass that to the main file. Then we also don't need the output file etc.
+    # TODO: provide possibility to only work on specific piece of the sky
+
+    l = np.linspace(0, l_boundary, num=(l_boundary/delta_l)+1)
+    b = np.linspace(-90, b_boundary - 90, num=(b_boundary/delta_b)+1)
+    print l, b
+    coord_map = np.zeros((len(l), len(b)), dtype=object)
+    for i in xrange(len(l)):
+        for j in xrange(len(b)):
+            coord_map[i,j] = ((l[i], b[j]))
+#    coord_map = zip(l,b)
+#    print coord_map
+
+    # Boundaries
+    # l: 0, 360 degrees
+    # b: -90 to +90 degrees
+    settings = program_settings()
+    settings.inputfile = open(args[0], 'r')
+    print settings.inputfile
+
+    read_inputfiles_and_sort_by_coords(settings, coord_map)
+
+    settings.cspec  = 1
+    settings.coords = 1
+    compspectra     = np.array([comp_spectrum(5673) for i in xrange(len(l)*len(b))])
+    tau_array       = np.zeros(len(l)*len(b))
+    l_iter          = 0
+    b_iter          = 0
+
+    outfile_basis = raw_input('Give the name of the output FITS files: ')
+
+    for i in xrange(len(compspectra)):
+        settings.l_min = l[l_iter]
+        settings.l_max = l[l_iter] + delta_l
+        settings.b_min = b[b_iter]
+        settings.b_max = b[b_iter] + delta_b
+        settings.outfile = outfile_basis + '_' + str(settings.l_min) + str(settings.b_min) + str(settings.l_max) + str(settings.b_max) + '.fits'
+        print "Working on outfile: ", settings.outfile
+        compspectra[i] = PyS_SDSScompspec.main(args, settings)
+        tau_array[i]   = reduce(lambda x,y: x+y, compspetra[i].flux) 
+
+        if l_iter < len(l):
+            l_iter += 1
+        else:
+            l_iter = 0
+            b_iter += 1
+
+
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])

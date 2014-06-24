@@ -79,6 +79,16 @@ class comp_spectrum:
 class program_settings:
     def __init__(self):
         self.dust         = 0
-        self.nprocs       = 0
+        self.nprocs       = 8
         self.program_name = 'PyS_SDSScompspec'
+        self.inputfile    = ''
+        self.outfile      = ''
+        self.cspec        = 0
+        self.coords       = 0
+        self.l_min        = -999
+        self.l_max        = -999
+        self.b_min        = -999
+        self.b_max        = -999
+#        self.coords_min = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
+#        self.coords_max = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
         
