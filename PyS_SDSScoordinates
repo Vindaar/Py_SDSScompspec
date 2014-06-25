@@ -11,17 +11,77 @@ from astropy import units as u
 from astropy.io import fits
 import numpy as np
 
-def read_inputfiles_and_sort_by_coords(settings, coord_map):
+# contains function to call date and time
+from datetime import datetime
+
+
+class coordinate_square:
+    def __init__(self):
+        self.l_min        = 0
+        self.l_max        = 0
+        self.b_min        = 0
+        self.b_max        = 0
+        self.spectra_list = []
+        self.tau          = 0
+        self.tau_error    = 0
+        self.num_contr    = 0   # number of contributing sightlines to tau
+        
+def create_coord_map(delta_l, delta_b, l_boundary_low = 0, 
+                     l_boundary_high = 360, b_boundary_low = -90,
+                     b_boundary_high = 90):
+    # Creates a list of coordinate_square elements based on given boundaries and size of 
+    # each coordinate square.
+    # coord_map and spec_element are temporary objects
+
+    l = np.linspace(l_boundary_low, l_boundary_high - delta_l, num=(l_boundary_high/delta_l))
+    b = np.linspace(b_boundary_low, b_boundary_high - delta_b, num=(b_boundary_high/delta_b)*2)
+#    print l, b
+    coord_map = np.zeros((len(l), len(b)), dtype=object)
+#    spectra_map = np.ndarray([(coordinate_square() for i in xrange(len(l)), coordinate_square() for i in xrange(len(b)))])
+    spectra_map = np.ndarray((len(l), len(b)), dtype=object)
+#    spectra_map[:][:] = coordinate_square()
+#    print spectra_map
+
+    # TODO: think of more pythonic way to do this..
+    for i in xrange(len(l)):
+        for j in xrange(len(b)):
+            coord_map[i,j] = ((l[i], b[j]))
+            print coord_map[i,j]
+            if (i*len(l) + j)%100 == 0 and i:
+                print (i*len(l) + j)
+            # temporary element of spectra_map for convenience
+            spec_element = coordinate_square()
+            spec_element.l_min = coord_map[i,j][0]
+            spec_element.b_min = coord_map[i,j][1]
+            spec_element.l_max = spec_element.l_min + delta_l
+            spec_element.b_max = spec_element.b_min + delta_b
+            spectra_map[i,j] = spec_element
+            print spec_element.l_min
+            print spec_element.b_min
+                    
+#    print spectra_map[24].b_max
+    print "heyhey"
+    print spectra_map.size
+    print spectra_map[18,3].l_min, spectra_map[3,3].b_min
+    
+#    print coord_map[:]
+    return spectra_map
+
+def read_inputfiles_and_sort_by_coords(settings, spectra_map):
 
 #    print coord_map
 #    print coord_map[0]
 #    print coord_map[0][0]
+    # receives the input file containing FITS files, opens them and reads
+    # coordinates. Then it sorts all spectra and assigns them to the 
+    # correct coordinate_square.
 
     files = list(settings.inputfile)
     data_type = [('filename', 'S100'), ('l_deg', float), ('b_deg', float)]
     spectra_tuple = np.ndarray((len(files)), dtype = data_type)
     
     for i, file in enumerate(files):
+        file = file.rstrip()
         filetype = check_filetype(file)
         hdu = fits.open(file)
         hdu0header = hdu[0].header
@@ -36,26 +96,40 @@ def read_inputfiles_and_sort_by_coords(settings, coord_map):
         coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
         entry = (file, float(coordinates.galactic.l.deg), float(coordinates.galactic.b.deg))
         spectra_tuple[i] = entry
+        if i % 100 == 0:
+            print i
 #        spectra_tuple[i][1] = float(coordinates.galactic.l.deg)
 #        spectra_tuple[i][2] = float(coordinates.galactic.b.deg)
 #        print len(spectra_tuple)
-        print spectra_tuple[i]
+#        print spectra_tuple[i]
         hdu.close()
 
     spectra_tuple = np.sort(spectra_tuple, order=['l_deg','b_deg'])
 #    print spectra_tuple
 
 
-    spectra_map = np.ndarray(len(coord_map), dtype=object)
-    for i in xrange(len(coord_map)):
-        for j in xrange(len(coord_map)):
-            k = 0
-            print spectra_tuple[i][1], spectra_tuple[i][2]
-            while spectra_tuple[k][1] < coord_map[:
-                k += 1
-            print k
+#    spectra_map = np.ndarray(len(coord_map), dtype=object)
+    # TODO: think of more pythonic way to do this
+    for i in xrange(len(spectra_tuple)):
+        # for j in xrange(len(coord_map)):
+        #     k = 0
+        #     print coord_map[0][0][0], coord_map[0][0][1]
+        #     print spectra_tuple[i][1], spectra_tuple[i][2]
+        #     while spectra_tuple[k][1] < coord_map[0][0][0]:
+#                k += 1
+        temp_index_l = int(spectra_tuple[i][1] / settings.delta_l)
+        temp_index_b = int( (spectra_tuple[i][2] + 90) / settings.delta_b)
+        spectra_map[temp_index_l, temp_index_b].spectra_list.append(spectra_tuple[i][0])
+        print spectra_tuple[i][2], temp_index_l, temp_index_b
+        print spectra_map[temp_index_l, temp_index_b].l_min, spectra_map[temp_index_l, temp_index_b].b_min
+#        k = 0
+#        while (spectra_tuple[k][1] <= 
+
+
+#        print spectra_tuple[i][1]
+#            print k
 #            spectra_map[i,j] = 
-            print spectra_map[i]
+#            print spectra_map[i]
 
 
 # Switch to numpy arrays?
@@ -63,10 +137,156 @@ def read_inputfiles_and_sort_by_coords(settings, coord_map):
 #    for i,j in 
 #    temp_array 
 
-    return spectra_tuple
+    return spectra_map
+
+
+def build_coordinate_fits_file(compspectra, spectra_map, settings):
+
+# Build the actual FITS output file
+    # set a few variables
+    i = 0
+    coeff1 = 0.0001
+
+    # TODO: For now we only take nhist from the fist comp_spectrum into account
+    # think about if we actually need that value
+    while compspectra[0].nhist == 0:
+        i += 1
+    sidx = i
+    npix = 0
+    date_time = datetime.now()
+
+    hdu0_l         = np.zeros(spectra_map.size)
+    hdu0_b         = np.zeros(spectra_map.size)
+    hdu0_tau       = np.zeros(spectra_map.size)
+    hdu0_tau_error = np.zeros(spectra_map.size)
+    hdu0_num_contr = np.zeros(spectra_map.size)
+    
+    # for i in xrange(sidx, 3000):
+    #     if compspectra.nhist[i] > 0:
+    #         npix = i+1
+
+# HDU1: Image array. in principle just the spectra map overlaid with tau_array.
+# TODO: add tau value to coordinate_square object, so that we can work on spectra_map?
+# HDU2: individual information about compspectra output?
+
+
+# HDU1: l, b, tau, tau_error, # contributing, 
+# give l, b as center of square
+
+# Calculate some statistics
+    
+    
+
+# calculate total number of sightlines
+# sum over all compspectra spectra_counts
+    spectra_count = reduce(lambda nspec, cspec_count: nspec + cspec_count, map(lambda cspec: cspec.spectra_count, compspectra))
+
+    # Add a few header keys
+    prihdr = fits.Header()
+    prihdr['PROGRAM'] = settings.program_name
+    prihdr['AUTHOR']  = ('Sebastian Schmidt')
+    prihdr['DATE']    = (date_time.strftime("%A, %d. %B %Y %I:%M%p"), 'Date created')
+    prihdr['ARRAY0']  = ('l', 'Latitude of coordinate square')
+    prihdr['ARRAY1']  = ('b', 'Longitude of coordinate square')
+    prihdr['ARRAY2']  = ('TAU', 'averaged optical depth')
+    prihdr['ARRAY3']  = ('ETAU', 'error of averaged optical depth')
+    prihdr['ARRAY4']  = ('NCONTR', 'number of contributing QSOs to sightline')
+    prihdr['NSPECTRA']= (spectra_count, 'Total number of contributing QSOs')
+#    prihdr['NSPEC']   = (len(spec), 'Total number of contributing QSOs')
+    prihdr['VACUUM']  = (1, 'Wavelengths are in vacuum')
+    prihdr['DC_FLAG'] = (1, 'Log-Linear Flag')
+    prihdr['CRPIX1']  = (1, 'Starting pixel (1-indexed)')
+    prihdr['COEFF0']  = np.log10(compspectra[0].wave[sidx])
+    prihdr['COEFF1']  = coeff1
+    prihdr['CRVAL1']  = np.log10(compspectra[0].wave[sidx])
+    prihdr['CD1_1']   = coeff1
+    prihdr['DR']      = (10, 'SDSS Data release used')
+
+
+    spectra_map = spectra_map.reshape(spectra_map.size)
+    print spectra_map.shape
+    print spectra_map
+
+    # run over all pixels and append elements to new arrays
+    print len(spectra_map)
+    for i in xrange(len(spectra_map)):
+        hdu0_l[i]         = (spectra_map[i].l_max + spectra_map[i].l_min) / 2.0
+        hdu0_b[i]         = (spectra_map[i].b_max + spectra_map[i].b_min) / 2.0
+        hdu0_tau[i]       = spectra_map[i].tau
+        hdu0_tau_error[i] = spectra_map[i].tau_error
+        hdu0_num_contr[i] = spectra_map[i].num_contr
+    # zip arrays; will create one array of 3 tuples from the three
+    # individual arrays
+#    zipped_hdu0 = zip(hdu0_l, hdu0_b, hdu0_tau, hdu0_tau_error, hdu0_num_contr)
+    # currently wrong format, so we transpose the array
+#    zipped_hdu0 = np.transpose(zipped_hdu0)
+
+# Put into image or table?
+
+    # write arrays to Table HDU:
+    TableHDU = fits.new_table(
+        fits.ColDefs([fits.Column(name='l',           format='D', array=hdu0_l),
+                      fits.Column(name='b',           format='D', array=hdu0_b),
+                      fits.Column(name='Tau',         format='D', array=hdu0_tau),
+                      fits.Column(name='ETau',        format='D', array=hdu0_tau_error),
+                      fits.Column(name='NumContr',    format='D', array=hdu0_num_contr)]))
+
+    # # create the Primary ouput HDU and print it to file
+    hdu = fits.PrimaryHDU(header=prihdr)
+
+    # # Create 2nd HDU containing information on all QSOs
+    # # Calculate arrays, which will fill the table HDU
+    # mjd_array         = map(lambda spec: spec.MJD, spec)
+    # plate_array       = map(lambda spec: spec.plateid, spec)
+    # fiber_array       = map(lambda spec: spec.fiberid, spec) 
+    # alpha_array       = map(lambda spec: spec.alpha, spec)
+    # alpha_error_array = map(lambda spec: spec.alpha_error, spec)
+    # ra_array          = map(lambda spec: spec.coordinates.ra.deg, spec)
+    # dec_array         = map(lambda spec: spec.coordinates.dec.deg, spec)
+    # l_array           = map(lambda spec: spec.coordinates.galactic.l.deg, spec)
+    # b_array           = map(lambda spec: spec.coordinates.galactic.b.deg, spec)
+    # zem_array         = map(lambda spec: spec.z, spec)
+    # smag_array        = map(lambda spec: spec.smag, spec)
+    # #flag_array 
+
+    # # write arrays to Table HDU:
+    # TableHDU = fits.new_table(
+    #     fits.ColDefs([fits.Column(name='MJD',    format='D', array=mjd_array),
+    #                   fits.Column(name='PLATE',  format='D', array=plate_array),
+    #                   fits.Column(name='FIBER',  format='D', array=fiber_array),
+    #                   fits.Column(name='RA',     format='D', array=ra_array),
+    #                   fits.Column(name='DEC',    format='D', array=dec_array),
+    #                   fits.Column(name='ALPHA',  format='D', array=alpha_array),
+    #                   fits.Column(name='EALPHA', format='D', array=alpha_error_array),
+    #                   fits.Column(name='l',      format='D', array=l_array),
+    #                   fits.Column(name='b',      format='D', array=b_array),
+    #                   fits.Column(name='ZEM',    format='D', array=zem_array),
+    #                   fits.Column(name='MAGSPEC',format='PD()', array=smag_array)]))
+    #  #                 fits.Column(name='FLAG',   format='E', array=flag_array)]))
+    # # TODO: check if I can change smag column a little bit
+
+
+    # # Now write new keywords to Table header
+    # table_header = TableHDU.header
+    # table_header['NSPEC']  = (len(spec), 'Total number of Quasars')
+    # table_header['MEAN_A'] = (compspectra.mean_a, 'Mean spectral index')
+    # table_header['SIGMA_A']= (compspectra.sigma_a, 'Standard deviation on alpha')
+    # table_header['MED_A']  = (compspectra.median_a, 'Median spectral index')
+    # table_header['SIQR_A'] = (compspectra.siqr_a, '68% semi-interquartile range on alpha')
+
+    
+
+    # hdu.writeto('test.fits')
+    hdulist = fits.HDUList([hdu, TableHDU])
+    # write to outfile and 'clobber=True' -> overwrite if existing
+
+    outfile = 'test_coordinates.fits'
+    hdulist.writeto(outfile, clobber=True)
+
+
 
 def main(args):
-
+                    
     delta_l = 10
     delta_b = delta_l / 2
 
@@ -78,13 +298,11 @@ def main(args):
     # in here and pass that to the main file. Then we also don't need the output file etc.
     # TODO: provide possibility to only work on specific piece of the sky
 
-    l = np.linspace(0, l_boundary, num=(l_boundary/delta_l)+1)
-    b = np.linspace(-90, b_boundary - 90, num=(b_boundary/delta_b)+1)
-    print l, b
-    coord_map = np.zeros((len(l), len(b)), dtype=object)
-    for i in xrange(len(l)):
-        for j in xrange(len(b)):
-            coord_map[i,j] = ((l[i], b[j]))
+                
+    # We create the spectra_map. At this point contains only location of squares and no spectra.
+    # will be filled by calling read_inputfiles_and_sort_by_coords()
+    spectra_map = create_coord_map(delta_l, delta_b)
+
 #    coord_map = zip(l,b)
 #    print coord_map
 
@@ -92,35 +310,51 @@ def main(args):
     # l: 0, 360 degrees
     # b: -90 to +90 degrees
     settings = program_settings()
+    settings.program_name = 'SDSScoordinates'
     settings.inputfile = open(args[0], 'r')
     print settings.inputfile
 
-    read_inputfiles_and_sort_by_coords(settings, coord_map)
+    spectra_map = read_inputfiles_and_sort_by_coords(settings, spectra_map)
 
     settings.cspec  = 1
     settings.coords = 1
-    compspectra     = np.array([comp_spectrum(5673) for i in xrange(len(l)*len(b))])
-    tau_array       = np.zeros(len(l)*len(b))
-    l_iter          = 0
-    b_iter          = 0
+    compspectra     = np.array([comp_spectrum(5673) for i in xrange(spectra_map.size)])
+#    l_iter          = 0
+#    b_iter          = 0
 
     outfile_basis = raw_input('Give the name of the output FITS files: ')
 
-    for i in xrange(len(compspectra)):
-        settings.l_min = l[l_iter]
-        settings.l_max = l[l_iter] + delta_l
-        settings.b_min = b[b_iter]
-        settings.b_max = b[b_iter] + delta_b
-        settings.outfile = outfile_basis + '_' + str(settings.l_min) + str(settings.b_min) + str(settings.l_max) + str(settings.b_max) + '.fits'
-        print "Working on outfile: ", settings.outfile
-        compspectra[i] = PyS_SDSScompspec.main(args, settings)
-        tau_array[i]   = reduce(lambda x,y: x+y, compspetra[i].flux) 
+    for i in xrange(len(spectra_map)):
+        for j in xrange(spectra_map.size / len(spectra_map)):
+            settings.l_min = spectra_map[i,j].l_min
+            settings.l_max = spectra_map[i,j].l_max
+            settings.b_min = spectra_map[i,j].b_min
+            settings.b_max = spectra_map[i,j].b_max
+#            print spectra_map[i,j].spectra_list
+            if spectra_map[i,j].spectra_list:
+                settings.spectra_list = spectra_map[i,j].spectra_list
+                settings.outfile = outfile_basis + '_' + str(int(settings.l_min)) + str(int(settings.b_min)) + str(int(settings.l_max)) + str(int(settings.b_max)) + '.fits'
 
-        if l_iter < len(l):
-            l_iter += 1
-        else:
-            l_iter = 0
-            b_iter += 1
+                print "Working on outfile: ", settings.outfile
+                print "Contains #", len(spectra_map[i,j].spectra_list), "spectra"
+
+                compspectra[i*len(spectra_map) + j] = PyS_SDSScompspec.main(args, settings)
+                spectra_map[i,j].num_contr          = compspectra[i*len(spectra_map) + j].spectra_count
+                if spectra_map[i,j].num_contr:
+                    spectra_map[i,j].tau                = (sum(compspectra[i*len(spectra_map) + j].flux) / spectra_map[i,j].num_contr)
+                    spectra_map[i,j].tau_error          = (sum(compspectra[i*len(spectra_map) + j].flux_error) / spectra_map[i,j].num_contr)
+                else:
+                    spectra_map[i,j].tau       = 0
+                    spectra_map[i,j].tau_error = 0
+                print spectra_map[i,j].tau, spectra_map[i,j].tau_error
+
+        # if l_iter < len(l):
+        #     l_iter += 1
+        # else:
+        #     l_iter = 0
+        #     b_iter += 1
+
+    build_coordinate_fits_file(compspectra, spectra_map, settings)
 
 
 

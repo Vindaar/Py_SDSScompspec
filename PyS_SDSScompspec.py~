@@ -39,16 +39,16 @@ def main(args, settings = program_settings()):
     # is already given in settings object.
 
     # Read in filename and settings from command line
+    print "haha0"
     
     if args_check(args, settings) == 0:
+        print "haha"
         return 0
 
+    print "haha2"
 
     # Basic declarations
-    if settings.spectra_list:
-        files = settings.spectra_list
-    else:
-        files = list(settings.inputfile)
+    files = list(settings.inputfile)
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
     spectra = np.array([spectrum() for i in xrange(len(files))])
     compspec = comp_spectrum(5763)
@@ -112,8 +112,7 @@ def main(args, settings = program_settings()):
 	        
     statistics(compspec, spectra)
     # TODO: change build_fits_file such that it reads outfile from settings object within function
-    if settings.cspec == 0:
-        build_fits_file(compspec, spectra, settings.outfile, settings)
+    build_fits_file(compspec, spectra, settings.outfile, settings)
     print "Spectra used: ", compspec.spectra_count, "/", len(files)
 
     # If cspec flag is set, we return the compspec object to the program that called this function
