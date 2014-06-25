@@ -83,6 +83,7 @@ class program_settings:
         self.program_name = 'PyS_SDSScompspec'
         self.inputfile    = ''
         self.outfile      = ''
+        self.outfile_basis= ''
         self.spectra_list = ''
         self.cspec        = 0
         self.coords       = 0
@@ -92,6 +93,4 @@ class program_settings:
         self.b_max        = -999
         self.delta_l      = 10
         self.delta_b      = self.delta_l / 2.0
-#        self.coords_min = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
-#        self.coords_max = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
         
