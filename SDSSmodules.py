@@ -828,6 +828,22 @@ def args_check(args, settings):
         except IndexError:
             print "Error: if --nprocs is set, need to provide number of processes to use!"
             return 0
+    if '--delta_l' in args:
+        i = args.index('--delta_l')
+        try:
+            settings.delta_l = eval(args[i+1])
+            if '--delta_b' not in args:
+                settings.delta_b / settings.delta_l / 2.0
+        except IndexError:
+            print "Error: --delta_l set, but no value given!"
+            return 0
+    if '--delta_b' in args:
+        i = args.index('--delta_b')
+        try:
+            settings.delta_b = eval(args[i+1])
+        except IndexError:
+            print "Error: --delta_b set, but no value given!"
+            return 0
 
 
 
@@ -849,5 +865,10 @@ def help():
     print "                  l_min b_min l_max b_max"
     print "    --cspec:      activates return of compspec object at the end" 
     print "                  of the program."  
+    print "    --delta_l:    size of considered rectangles in SDSScoordinates in"
+    print "                  in latitude"
+    print "    --delta_b:    size of considered rectangles in SDSScoordinates in"
+    print "                  in longitude. If --delta_l set, but --delta_b not,"
+    print "                  we assume delta_b = delta_l / 2"
     print "    -h, --help:   print this help"
 
