@@ -1,6 +1,7 @@
 # contains astropy coordinate objects used to work with coordinates
 from astropy.coordinates import ICRS, Galactic
 from astropy import units as u
+import healpy as hp
 
 
 ################################################################################
@@ -87,10 +88,14 @@ class program_settings:
         self.spectra_list = ''
         self.cspec        = 0
         self.coords       = 0
-        self.l_min        = -999
-        self.l_max        = -999
-        self.b_min        = -999
-        self.b_max        = -999
-        self.delta_l      = 10
-        self.delta_b      = self.delta_l / 2.0
-        
+        # Using HEALpy, we have no use for the coordinate specific variables
+        # self.l_min        = -999
+        # self.l_max        = -999
+        # self.b_min        = -999
+        # self.b_max        = -999
+        # self.delta_l      = 10
+        # self.delta_b      = self.delta_l / 2.0
+        # Instead, we determine the resolution of the map by the HEALpix parameter
+        # Nside. Default: 8, for runtime while testing)
+        self.map_nside        = 8
+        self.map_npix         = hp.nside2npix(self.map_nside)

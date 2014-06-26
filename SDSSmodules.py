@@ -63,13 +63,13 @@ def read_spec(qso, spec, settings):
     dec = hdu0header['PLUG_DEC']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
     # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
-    if settings.coords:
-        if (spec.coordinates.galactic.l.deg >= settings.l_min and
-            spec.coordinates.galactic.l.deg <= settings.l_max and
-            spec.coordinates.galactic.b.deg >= settings.b_min and
-            spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
-            # return 1 if we neglect this quasar
-            return 1
+    # if settings.coords:
+    #     if (spec.coordinates.galactic.l.deg >= settings.l_min and
+    #         spec.coordinates.galactic.l.deg <= settings.l_max and
+    #         spec.coordinates.galactic.b.deg >= settings.b_min and
+    #         spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
+    #         # return 1 if we neglect this quasar
+    #         return 1
     
     spec.beginwl = hdu0header['COEFF0']
     spec.deltawl = hdu0header['COEFF1']
@@ -141,15 +141,15 @@ def read_spSpec(qso, spec, settings):
     dec = hdu0header['DECOBJ']
     spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
     # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
-    if settings.coords:
-        if (spec.coordinates.galactic.l.deg >= settings.l_min and
-            spec.coordinates.galactic.l.deg <= settings.l_max and
-            spec.coordinates.galactic.b.deg >= settings.b_min and
-            spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
-            # return 1 if we neglect this quasar
-            print spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg
-            print settings.l_min, settings.b_min
-            return 1
+    # if settings.coords:
+    #     if (spec.coordinates.galactic.l.deg >= settings.l_min and
+    #         spec.coordinates.galactic.l.deg <= settings.l_max and
+    #         spec.coordinates.galactic.b.deg >= settings.b_min and
+    #         spec.coordinates.galactic.b.deg <= settings.b_max) == 0:
+    #         # return 1 if we neglect this quasar
+    #         print spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg
+    #         print settings.l_min, settings.b_min
+    #         return 1
 
 
     spec.MJD = hdu0header['MJD']

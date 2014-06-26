@@ -15,43 +15,45 @@ import numpy as np
 from datetime import datetime
 
 
-class coordinate_square:
-    def __init__(self):
-        self.l_min        = 0
-        self.l_max        = 0
-        self.b_min        = 0
-        self.b_max        = 0
+class coordinate_pixel:
+    def __init__(self, pixel_index, nside):
+        # Coordinates 
+        # self.l_min        = 0
+        # self.l_max        = 0
+        # self.b_min        = 0
+        # self.b_max        = 0
+        # TODO: think about adding explicit coordinate in l and b to each object?
+        self.l, self.b    = hp.pix2ang(nside, pixel_index)
         self.spectra_list = []
         self.tau          = 0
         self.tau_error    = 0
         self.num_contr    = 0   # number of contributing sightlines to tau
         
-def create_coord_map(delta_l, delta_b, l_boundary_low = 0, 
-                     l_boundary_high = 360, b_boundary_low = -90,
-                     b_boundary_high = 90):
+def create_coord_map(settings):
     # Creates a list of coordinate_square elements based on given boundaries and size of 
     # each coordinate square.
-    # coord_map and spec_element are temporary objects
     print "Start creation of coordinate map: "
 
-    l = np.linspace(l_boundary_low, l_boundary_high - delta_l, num=(l_boundary_high/delta_l))
-    b = np.linspace(b_boundary_low, b_boundary_high - delta_b, num=(b_boundary_high/delta_b)*2)
-    coord_map = np.zeros((len(l), len(b)), dtype=object)
-    spectra_map = np.ndarray((len(l), len(b)), dtype=object)
+    spectra_map = np.arange((settings.map_npix), dtype=object)
+    # Create coordinate pixel for each element in map. Do in more pythonic way?
+    for i in xrange(settings.map_npix):
+        spectra_map[i]   = coordinate_pixel(i, settings.map_nside)
 
+    # Using HEALpy, we don't need a specific coord_map, since the coordinates
+    # are only stored implicitly
     # TODO: think of more pythonic way to do this..
-    for i in xrange(len(l)):
-        for j in xrange(len(b)):
-            coord_map[i,j] = ((l[i], b[j]))
-            if (i*len(l) + j)%100 == 0 and i:
-                print (i*len(l) + j), " elements done"
-            # temporary element of spectra_map for convenience
-            spec_element = coordinate_square()
-            spec_element.l_min = coord_map[i,j][0]
-            spec_element.b_min = coord_map[i,j][1]
-            spec_element.l_max = spec_element.l_min + delta_l
-            spec_element.b_max = spec_element.b_min + delta_b
-            spectra_map[i,j] = spec_element
+    # for i in xrange(len(l)):
+    #     for j in xrange(len(b)):
+    #         coord_map[i,j] = ((l[i], b[j]))
+    #         if (i*len(l) + j)%100 == 0 and i:
+    #             print (i*len(l) + j), " elements done"
+    #         # temporary element of spectra_map for convenience
+    #         spec_element = coordinate_square()
+    #         spec_element.l_min = coord_map[i,j][0]
+    #         spec_element.b_min = coord_map[i,j][1]
+    #         spec_element.l_max = spec_element.l_min + delta_l
+    #         spec_element.b_max = spec_element.b_min + delta_b
+    #         spectra_map[i,j] = spec_element
 
     return spectra_map
 
@@ -80,7 +82,7 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
             ra = hdu0header['RAOBJ']
             dec = hdu0header['DECOBJ']
         coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
-        entry = (file, float(coordinates.galactic.l.deg), float(coordinates.galactic.b.deg))
+        entry = (file, float(coordinates.galactic.l.rad), float(coordinates.galactic.b.rad + np.pi/2.0))
         spectra_tuple[i] = entry
         if i % 100 == 0:
             print i, " coordinates read."
@@ -90,9 +92,18 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
 
     # TODO: think of more pythonic way to do this
     for i in xrange(len(spectra_tuple)):
-        temp_index_l = int(spectra_tuple[i][1] / settings.delta_l)
-        temp_index_b = int( (spectra_tuple[i][2] + 90) / settings.delta_b)
-        spectra_map[temp_index_l, temp_index_b].spectra_list.append(spectra_tuple[i][0])
+        # temp_index_l = int(spectra_tuple[i][1] / settings.delta_l)
+        # temp_index_b = int( (spectra_tuple[i][2] + 90) / settings.delta_b)
+        # spectra_map[temp_index_l, temp_index_b].spectra_list.append(spectra_tuple[i][0])
+        # Instead of two indices, we immediately get the one index for the pixel
+        # on the HEALpix map by using the HEALpy function ang2pix()
+        # l = longitude = phi element of [0, 2pi]
+        # b = latitude  = theta element of [0, pi]
+        # maybe have to add pi/2 to b, since it might be given from -pi/2 to pi/2
+        # Yes. Done in spectra_tuple
+        pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1])
+        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
+        spectra_map[pixel_index].spectra_list.append(spectra_tuple[i][0])
 
     return spectra_map
 
@@ -171,8 +182,8 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
 
     # run over all pixels and append elements to new arrays
     for i in xrange(len(spectra_map)):
-        hdu0_l[i]         = (spectra_map[i].l_max + spectra_map[i].l_min) / 2.0
-        hdu0_b[i]         = (spectra_map[i].b_max + spectra_map[i].b_min) / 2.0
+        hdu0_l[i]         = spectra_map[i].l
+        hdu0_b[i]         = spectra_map[i].b
         hdu0_tau[i]       = spectra_map[i].tau
         hdu0_tau_error[i] = spectra_map[i].tau_error
         hdu0_num_contr[i] = spectra_map[i].num_contr
@@ -220,7 +231,7 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
 
     # # Now write new keywords to Table header
     table_header = TableHDU.header
-    table_header['NSIDE']  = (np.sqrt(len(spectra_map)/12), 'Total number of Quasars')
+    table_header['NSIDE']  = (settings.map_nside, 'Nside of sky map')
     # table_header['NSPEC']  = (len(spec), 'Total number of Quasars')
     # table_header['MEAN_A'] = (compspectra.mean_a, 'Mean spectral index')
     # table_header['SIGMA_A']= (compspectra.sigma_a, 'Standard deviation on alpha')
@@ -246,12 +257,13 @@ def main(args):
     #TODO: --coords flag not all that necessary, since we can just create a settings object
     # in here and pass that to the main file. Then we also don't need the output file etc.
     # TODO: provide possibility to only work on specific piece of the sky
-
+        # unecessary now. We only use whole map for now.
                 
     # We create the spectra_map. At this point contains only location of squares and no spectra.
     # will be filled by calling read_inputfiles_and_sort_by_coords()
     # we could set boundaries on the considered coordinates here.
-    spectra_map = create_coord_map(settings.delta_l, settings.delta_b)
+    # Now, only 
+    spectra_map = create_coord_map(settings)
     spectra_map = read_inputfiles_and_sort_by_coords(settings, spectra_map)
 
     # Set settings flags for the call of SDSScompspec later
@@ -269,33 +281,34 @@ def main(args):
     # By running over all elements of spectra_map, we also run over all squares on the
     # galactic coordinate map
     for i in xrange(len(spectra_map)):
-        for j in xrange(spectra_map.size / len(spectra_map)):
+#        for j in xrange(spectra_map.size / len(spectra_map)):
             # Maybe unecessary to set settings coordinates, since we don't use them 
             # anymore in SDSScompspec
-            settings.l_min = spectra_map[i,j].l_min
-            settings.l_max = spectra_map[i,j].l_max
-            settings.b_min = spectra_map[i,j].b_min
-            settings.b_max = spectra_map[i,j].b_max
+            # settings.l_min = spectra_map[i,j].l_min
+            # settings.l_max = spectra_map[i,j].l_max
+            # settings.b_min = spectra_map[i,j].b_min
+            # settings.b_max = spectra_map[i,j].b_max
             # Only make a call to SDSScompspec, if there are any spectra at the 
             # considered coordinate
-            if spectra_map[i,j].spectra_list:
-                settings.spectra_list = spectra_map[i,j].spectra_list
-                settings.outfile = settings.outfile_basis + '_' + str(int(settings.l_min)) + '_' + str(int(settings.b_min)) + '_'  + str(int(settings.l_max)) + '_'  + str(int(settings.b_max)) + '.fits'
-                print "Working on outfile: ", settings.outfile
-                print "Contains #", len(spectra_map[i,j].spectra_list), "spectra"
+        if spectra_map[i].spectra_list:
+            settings.spectra_list = spectra_map[i].spectra_list
+            # Name by pixel index for now
+            settings.outfile = settings.outfile_basis + '_' + str(i)
+            print "Working on outfile: ", settings.outfile
+            print "Contains #", len(spectra_map[i].spectra_list), "spectra"
 
                 # call SDSScompspec and save the returned comp_spectrum into the array
-                compspectra[i*len(spectra_map) + j] = PyS_SDSScompspec.main(args, settings)
+            compspectra[i] = PyS_SDSScompspec.main(args, settings)
                 # actual calculations of the opacity.
                 # NOTE: calculation not correct yet, unsure how to do it properly.
-                spectra_map[i,j].num_contr          = compspectra[i*len(spectra_map) + j].spectra_count
-                if spectra_map[i,j].num_contr:
-                    spectra_map[i,j].tau                = (sum(compspectra[i*len(spectra_map) + j].flux) / spectra_map[i,j].num_contr)
-                    spectra_map[i,j].tau_error          = (sum(compspectra[i*len(spectra_map) + j].flux_error) / spectra_map[i,j].num_contr)
-                else:
-                    spectra_map[i,j].tau       = 0
-                    spectra_map[i,j].tau_error = 0
-                print "tau and error: ", spectra_map[i,j].tau, spectra_map[i,j].tau_error
+            spectra_map[i].num_contr     = compspectra[i].spectra_count
+            if spectra_map[i].num_contr:
+                spectra_map[i].tau       = (sum(compspectra[i].flux) / spectra_map[i].num_contr)
+                spectra_map[i].tau_error = (sum(compspectra[i].flux_error) / spectra_map[i].num_contr)
+            else:
+                spectra_map[i].tau       = 0
+                spectra_map[i].tau_error = 0
+            print "tau and error: ", spectra_map[i].tau, spectra_map[i].tau_error
 
     build_coordinate_fits_file(compspectra, spectra_map, settings)
 
