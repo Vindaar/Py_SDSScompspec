@@ -102,7 +102,7 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
         # maybe have to add pi/2 to b, since it might be given from -pi/2 to pi/2
         # Yes. Done in spectra_tuple
         pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1])
-        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
+#        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
         spectra_map[pixel_index].spectra_list.append(spectra_tuple[i][0])
 
     return spectra_map
