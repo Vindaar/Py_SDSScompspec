@@ -219,7 +219,8 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
 
 
     # # Now write new keywords to Table header
-    # table_header = TableHDU.header
+    table_header = TableHDU.header
+    table_header['NSIDE']  = (np.sqrt(len(spectra_map)/12), 'Total number of Quasars')
     # table_header['NSPEC']  = (len(spec), 'Total number of Quasars')
     # table_header['MEAN_A'] = (compspectra.mean_a, 'Mean spectral index')
     # table_header['SIGMA_A']= (compspectra.sigma_a, 'Standard deviation on alpha')

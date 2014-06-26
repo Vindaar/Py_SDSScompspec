@@ -94,7 +94,7 @@ def read_spec(qso, spec, settings):
 
     #magnitudes not needed for now. Did they cause memory overhead? 
     # TODO: check that!
-    # spec.mag = TableHDU2['PSFMAG'].copy()
+    # spec.mag = TableHDU2['PSFMAG'].copy(
 
     #TODO: Read in primary target information?
 
