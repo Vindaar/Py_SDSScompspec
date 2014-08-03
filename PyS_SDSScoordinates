@@ -184,6 +184,7 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
     for i in xrange(len(spectra_map)):
         hdu0_l[i]         = spectra_map[i].l
         hdu0_b[i]         = spectra_map[i].b
+        print hdu0_l[i], hdu0_b[i], i
         hdu0_tau[i]       = spectra_map[i].tau
         hdu0_tau_error[i] = spectra_map[i].tau_error
         hdu0_num_contr[i] = spectra_map[i].num_contr
@@ -303,8 +304,13 @@ def main(args):
                 # NOTE: calculation not correct yet, unsure how to do it properly.
             spectra_map[i].num_contr     = compspectra[i].spectra_count
             if spectra_map[i].num_contr:
-                spectra_map[i].tau       = (sum(compspectra[i].flux) / spectra_map[i].num_contr)
-                spectra_map[i].tau_error = (sum(compspectra[i].flux_error) / spectra_map[i].num_contr)
+                
+                # TODO: still WIP
+                spectra_map[i].tau       = (sum(compspectra[i].flux))/(np.size(np.nonzero(compspectra[i].flux)))
+
+
+#                spectra_map[i].tau       = (sum(compspectra[i].flux))# / spectra_map[i].num_contr)
+                spectra_map[i].tau_error = (sum(compspectra[i].flux_error))# / spectra_map[i].num_contr)
             else:
                 spectra_map[i].tau       = 0
                 spectra_map[i].tau_error = 0

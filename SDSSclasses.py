@@ -20,7 +20,7 @@ class spectrum:
         self.cpix        = 0            # 1
         self.z           = 0            # emission redshift of the QSO
         # Fitting parameters
-        self.alpha       = 0            # spectral index of spectrum
+        self.alpha       = -999            # spectral index of spectrum
         self.alpha_error = 0            # 1 sigma error of alpha
         self.beta        = 0            # alpha = -beta - 2
         self.delta       = 0            # start of powerlaw wavelength array. 
@@ -97,5 +97,5 @@ class program_settings:
         # self.delta_b      = self.delta_l / 2.0
         # Instead, we determine the resolution of the map by the HEALpix parameter
         # Nside. Default: 8, for runtime while testing)
-        self.map_nside        = 8
+        self.map_nside        = 2
         self.map_npix         = hp.nside2npix(self.map_nside)

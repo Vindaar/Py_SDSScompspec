@@ -162,7 +162,8 @@ def read_spSpec(qso, spec, settings):
     #Open ImageData from HDU 0 and thus retrieve the flux and the error
     ImageData = hdu[0].data.copy()
     spec.flux = ImageData[0, 0:spec.npix].copy()
-    spec.flux_error = ImageData[1, 0:spec.npix].copy()
+    # 2 instead of ImageData[1,..
+    spec.flux_error = ImageData[2, 0:spec.npix].copy()
     
     # run over all wavelengths (pixels) and set the wavelength array
     # as well as the status array and signal to noise ratio
@@ -445,8 +446,13 @@ def fit_powerlaw(spec):
     wave_log       = np.zeros(emfree_regions_num)
     flux_log       = np.zeros(emfree_regions_num)
     flux_error_log = np.zeros(emfree_regions_num)
+    flux_temp      = np.zeros(np.size(spec.flux))
+
     # set standard values for alpha, alpha_error, beta and delta
-    spec.alpha = spec.alpha_error= spec.beta = spec.delta = -999
+    spec.alpha       = -999
+    spec.alpha_error = -999
+    spec.beta        = -999
+    spec.delta       = -999
     # create a variable, which counts how many regions contain usable data
     # only fit a function if all 4 regions are usable
     emfree_regions_data = 0
@@ -475,7 +481,16 @@ def fit_powerlaw(spec):
         # now, we neglect the - 1
         wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,1], spec.npix)# - 1
         # define number of elements
-        nmed = wave_em_interval_end - wave_em_interval_start
+        # nmed is the number of usable pixels in the flux array. It is given by the number of pixels
+        # in the interval of wave_em_interval_start to end with a flux error value bigger than 0
+        nmed = 0
+        for k in xrange(wave_em_interval_start, wave_em_interval_end):
+            # if there is a non-vanishing error for the pixel, it means that
+            # the pixel is good to use. Save all those flux elements for calc
+            # of median in temporary flux array and count number of pixels, nmed
+            if spec.flux_error[k] > 0:
+                flux_temp[nmed] = spec.flux[k]
+                nmed += 1
 
         # Calculation of semi-interquartile using built in numpy functions. I can't manage to get the
         # same results as the C program by using them, so I implemented my own function
@@ -486,8 +501,8 @@ def fit_powerlaw(spec):
         # siqr = (percentile84 - percentile16)/2.0
         
         if nmed > 0:
-            median = np.median(spec.flux[wave_em_interval_start:wave_em_interval_end])
-            siqr = calc_siqr(spec.flux[wave_em_interval_start:wave_em_interval_end], nmed)
+            median = np.median(flux_temp[0:nmed])
+            siqr = calc_siqr(flux_temp[0:nmed], nmed)
     
             spec.emfree[1,i] = median
             spec.emfree[2,i] = siqr/np.sqrt(nmed)
@@ -514,6 +529,8 @@ def fit_powerlaw(spec):
 
         coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
         
+        print wave_log, flux_log
+        
         # assign coefficients to our spectrum
         spec.beta = coeff[0]
         spec.alpha = -spec.beta - 2
@@ -530,17 +547,18 @@ def fit_powerlaw(spec):
 
     # if we don't have 4 usable regions, set everything to 0
     else:
-        spec.beta = 0
-        spec.alpha = 0
-        spec.delta = 0
-        spec.alpha_error = 0
+        # Currently leave those values at -999. Seems to be same as in C code then.
+        # spec.beta = 0
+        # spec.alpha = 0
+        # spec.delta = 0
+        # spec.alpha_error = 0
         spec.powerlaw = np.zeros(spec.npix)
         # Think about if 0 is a good value (currently checked in build_compspec)
 
-    
     del(spec.emfree)
+    del(flux_temp)
     # TODO: values differ slightly from c program!
-    # Fixed by implementing own siqr function.
+    # Fixed by implementing own siqr function. fixed again, alpha this time
     
 ################################################################################
 ############################## Compspec ########################################
@@ -571,7 +589,13 @@ def build_compspec(cspec, spec):
     # actually add the correct contributions of each spectrum to the correct 
     # wavelength in the composite spectrum    
     iterator = find_element_larger_in_arrays(spec.wave, cspec.wave[0], spec.npix)
+    if spec.wave[iterator] > cspec.wave[0] and iterator > 0:
+        iterator -= 1
     citerator = find_element_larger_in_arrays(cspec.wave, spec.wave[0], spec.npix)
+
+    params_iter = open("params_iter.txt", "a")
+    params_iter.write(str(iterator)+"    "+str(citerator)+"     "+str(spec.filename))
+
     # Run over all pixels / wavelengths of the spectrum
     # - iterator, because we don't want to access elements outside of array bounds
     # from 1 to pixels - iterator - 1, because we check for lambmin and lambmax
@@ -586,8 +610,8 @@ def build_compspec(cspec, spec):
            spec.flux_error[i+iterator]                       != 0             and
            spec.powerlaw[i+iterator]                         != 0):
             # we actually use the spectrum to add to the composite spectrum
-            cspec.sum[i+citerator] += spec.flux[i+iterator]/spec.powerlaw[i+iterator]
-            cspec.sum2[i+citerator] += (spec.flux[i+iterator]/spec.powerlaw[i+iterator])**2
+            cspec.sum[i+citerator]   += spec.flux[i+iterator]/spec.powerlaw[i+iterator]
+            cspec.sum2[i+citerator]  += (spec.flux[i+iterator]/spec.powerlaw[i+iterator])**2
             # and we count this contribution to this wavelength
             cspec.nhist[i+citerator] += 1
         else: 
@@ -596,7 +620,8 @@ def build_compspec(cspec, spec):
         # if we would be outside of lambmax in the next iteration, stop for loop
         if spec.wave[i+iterator] + spec.wave[i+iterator + 1] > 2*spec.lambmax: 
             break
-            
+
+    params_iter.close()
     # if everything goes well and we used the QSO, return 0
     return 0
 
@@ -623,6 +648,14 @@ def statistics(cspec, spec):
     # hardcoded the pixel range of 3000, same as in C program. 
     # TODO: check if can be done nicer
     # run over pixel range
+
+    parameters = open('parameters.txt', 'a')
+    # eventually take parameters out again. No real use except debugging
+
+    for i in xrange(np.size(cspec.sum)):
+        parameters.write(str(cspec.sum[i])+"     "+str(cspec.nhist[i])+"     "+str(cspec.sum2[i])+'\n')
+    parameters.close()
+
     for i in xrange(3000):
         # if sum, nhist and sum2 are good, 
         if cspec.sum[i] > 0 and cspec.nhist[i] > 0 and cspec.sum2[i] > 0:
@@ -668,7 +701,9 @@ def build_fits_file(cspec, spec, outfile, settings):
     # set a few variables
     i = 0
     coeff1 = 0.0001
-    while cspec.nhist == 0:
+    # TODO: FOLLOWING line is wrong? Should be nhist[i]. Changed!
+    # while cspec.nhist == 0:
+    while cspec.nhist[i] == 0:
         i += 1
     sidx = i
     npix = 0

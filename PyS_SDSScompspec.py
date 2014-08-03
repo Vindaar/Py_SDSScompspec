@@ -59,6 +59,11 @@ def main(args, settings = program_settings()):
     spectra_count = 0
     # memory analysis:
 
+    files_used_file = open('files_used', 'w')
+    files_used = []
+
+    alpha_wrong_count = 0
+
     # Read filename for the output FITS file:
     if settings.outfile == '':
         settings.outfile = raw_input('Give the name of the output FITS file: ')
@@ -75,9 +80,9 @@ def main(args, settings = program_settings()):
         if filetype == 2:
             if read_spec(file, spectra[i], settings) == 1:
                 continue
-        
+        spectra[i].filename = file
         # Conditions on the QSOs:
-        if spectra[i].z > 2.2 and spectra[i].z < 5.3:
+        if spectra[i].z >= 2.2 and spectra[i].z <= 5.3:
             # Dust corrections. Only done, if --dust flag is set on startup
             if settings.dust == 1:
                 get_Ebv(spectra[i], dustmap)
@@ -94,9 +99,20 @@ def main(args, settings = program_settings()):
                 # calculate comp spec
                 if build_compspec(compspec, spectra[i]) == 0:
                     compspec.spectra_count += 1
+                    files_used.append(file)
+
+        # else:
+        #     print "hahahah"
+        #     print "hahaha"
+        #     print spectra[i].z
         # Every 50th loop, we free all objects, which are not used anymore. 
         # This function is called automatically, but not often enough. Reduces
         # memory usage quite a lot.
+        if spectra[i].alpha == -999:
+            print ""
+            print ""
+            print file, spectra[i].alpha, spectra[i].z
+            alpha_wrong_count += 1
         if i % 50 == 0:
             gc.collect()
         # Free all big arrays, which won't be needed anymore, after this loop. 
@@ -114,7 +130,12 @@ def main(args, settings = program_settings()):
     # TODO: change build_fits_file such that it reads outfile from settings object within function
     if settings.cspec == 0:
         build_fits_file(compspec, spectra, settings.outfile, settings)
+
+    for i in xrange(len(files_used)):
+        files_used_file.write(files_used[i])
     print "Spectra used: ", compspec.spectra_count, "/", len(files)
+
+    print "There are ", alpha_wrong_count, "objects with alpha -999"
 
     # If cspec flag is set, we return the compspec object to the program that called this function
     if settings.cspec:
