@@ -657,10 +657,13 @@ def statistics(cspec, spec):
     parameters.close()
 
     for i in xrange(3000):
-        # if sum, nhist and sum2 are good, 
-        if cspec.sum[i] > 0 and cspec.nhist[i] > 0 and cspec.sum2[i] > 0:
+        # if nhist is non zero (because we divide by it) 
+        if cspec.nhist[i] > 0:
             # we add the flux of the composite spectrum as:
             # sum / nhist
+            # TODO: for some reason some values of the flux (around i = 2700) are below 0. Shouldn't be
+            # the case I think?
+            # TODO: Maybe change to numpy arrays? 
             cspec.flux.append(cspec.sum[i]/cspec.nhist[i])
             cspec.flux_error.append(cspec.sum2[i]/cspec.nhist[i] - cspec.flux[i]**2)
             if cspec.nhist[i] > 1:
@@ -674,7 +677,6 @@ def statistics(cspec, spec):
 
     # calculate mean_a, sigma_a, median_a and siqr_a
     nspec = len(spec)
-#    print nspec, spec
     # Create an array containing all alpha values of spectra, to which a
     # powerlaw could be fitted. Others don't contribute.
     alpha_array = np.zeros(nspec)
