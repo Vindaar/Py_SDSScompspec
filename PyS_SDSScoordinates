@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 
+# This program creates a skymap using the Healpix Python implementation HealPy.
+# It creates a coordinate pixel object for each pixel of the skymap
+# First, all FITS files of the input list file are opened, their coordinates
+# read and they are sorted and associated with the correct HealPix pixel.
+# After that SDSScompspec is called for each of the pixels. The resulting 
+# Compspec object is returned. 
+# A mean opacity is calculated for each pixel and saved in an output FITS file
+# containing a HealPix map, which can then be plotted using
+# PyS_SDSS-plot_map
+
 import PyS_SDSScompspec #main as SDSScompspec
 import PyS_SDSScompspec_multicore #main as SDSScompspec_multicore
 from SDSSclasses import *
@@ -23,7 +33,7 @@ class coordinate_pixel:
         # self.b_min        = 0
         # self.b_max        = 0
         # TODO: think about adding explicit coordinate in l and b to each object?
-        self.l, self.b    = hp.pix2ang(nside, pixel_index)
+        self.b, self.l    = hp.pix2ang(nside, pixel_index)
         self.spectra_list = []
         self.tau          = 0
         self.tau_error    = 0
@@ -82,6 +92,11 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
             ra = hdu0header['RAOBJ']
             dec = hdu0header['DECOBJ']
         coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+        print coordinates.ra.deg, coordinates.dec.deg
+        print coordinates.galactic.l.deg, coordinates.galactic.b.deg
+        print "rad:"
+        print coordinates.ra.rad, coordinates.dec.rad
+        print coordinates.galactic.l.rad, coordinates.galactic.b.rad
         entry = (file, float(coordinates.galactic.l.rad), float(coordinates.galactic.b.rad + np.pi/2.0))
         spectra_tuple[i] = entry
         if i % 100 == 0:
@@ -253,6 +268,9 @@ def main(args):
     settings = program_settings()
     settings.program_name = 'SDSScoordinates'
     args_check(args, settings)
+    # TODO: just a short fix for change in nside not affecting map_npix in settings, because it's determined on creation of object
+    if settings.map_npix == 0:
+        settings.map_npix = hp.nside2npix(settings.map_nside)
     print settings.inputfile
 
     #TODO: --coords flag not all that necessary, since we can just create a settings object

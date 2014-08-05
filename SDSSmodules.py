@@ -529,7 +529,7 @@ def fit_powerlaw(spec):
 
         coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
         
-        print wave_log, flux_log
+#        print wave_log, flux_log
         
         # assign coefficients to our spectrum
         spec.beta = coeff[0]
@@ -541,7 +541,7 @@ def fit_powerlaw(spec):
         except TypeError:
             print "Fitting problem"
 
-        print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
+#        print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
         # use the fitted coefficients to calculate the powerlaw continuum
         spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
 
@@ -864,6 +864,14 @@ def args_check(args, settings):
             settings.nprocs = eval(args[i+1])
         except IndexError:
             print "Error: if --nprocs is set, need to provide number of processes to use!"
+            return 0
+    if '--nside' in args:
+        i = args.index('--nside')
+        try:
+            settings.map_nside = eval(args[i+1])
+            settings.map_npix  = 0
+        except IndexError:
+            print "Error: if --nside is set, need to provide number of processes to use!"
             return 0
     if '--delta_l' in args:
         i = args.index('--delta_l')
