@@ -51,6 +51,7 @@ def main(args, settings = program_settings()):
         files = list(settings.inputfile)
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
     spectra = np.array([spectrum() for i in xrange(len(files))])
+    # Create a compspec object with 5763 pixels. Taken from C code
     compspec = comp_spectrum(5763)
     i = 0
     a = create_colorcurves()
@@ -60,7 +61,12 @@ def main(args, settings = program_settings()):
     # memory analysis:
 
     files_used_file = open('files_used', 'w')
+    files_not_used  = open('files_not_used.txt', 'w')
     files_used = []
+    files_not_used_zem = []
+    files_not_used_alpha = []
+    alpha_of_files_not_used = []
+    files_not_used_compspec = []
 
     alpha_wrong_count = 0
 
@@ -99,12 +105,22 @@ def main(args, settings = program_settings()):
                 # calculate comp spec
                 if build_compspec(compspec, spectra[i]) == 0:
                     compspec.spectra_count += 1
+                    # flag spectrum as used and contributed
+                    spectra[i].flag = 0
                     files_used.append(file)
-
-        # else:
-        #     print "hahahah"
-        #     print "hahaha"
-        #     print spectra[i].z
+                else:
+                    files_not_used_compspec.append(file)
+                    # flag spectrum as not used, discarded in build_compspec
+                    spectra[i].flag = 3
+            else:
+                files_not_used_alpha.append(file)
+                alpha_of_files_not_used.append(spectra[i].alpha)
+                # flag spectrum as not used, because of cut on spectral index
+                spectra[i].flag = 2
+        else:
+            files_not_used_zem.append(file)
+            # flag spectrum as not used, because of redshift
+            spectra[i].flag = 1
         # Every 50th loop, we free all objects, which are not used anymore. 
         # This function is called automatically, but not often enough. Reduces
         # memory usage quite a lot.
@@ -136,6 +152,13 @@ def main(args, settings = program_settings()):
     print "Spectra used: ", compspec.spectra_count, "/", len(files)
 
     print "There are ", alpha_wrong_count, "objects with alpha -999"
+
+    for item in files_not_used_zem:
+        print>>files_not_used, "zem     ", item
+    for i, item in enumerate(files_not_used_alpha):
+        print>>files_not_used, "alpha     ", alpha_of_files_not_used[i], item
+    for item in files_not_used_compspec:
+        print>>files_not_used, "compspec     ", item
 
     # If cspec flag is set, we return the compspec object to the program that called this function
     if settings.cspec:

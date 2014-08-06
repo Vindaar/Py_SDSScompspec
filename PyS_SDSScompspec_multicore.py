@@ -52,9 +52,9 @@ def file_loop(files, compspec, start_iter, end_iter, out_q, out_q2, settings):
             # Check for filetype (spSpec and spec) and call appropriate function
             filetype = check_filetype(files[i])
             if filetype == 1:
-                read_spSpec(files[i], spectra[j])
+                read_spSpec(files[i], spectra[j], settings)
             if filetype == 2:
-                read_spec(files[i], spectra[j])
+                read_spec(files[i], spectra[j], settings)
             elif filetype == 0:
                 print "File ", files[i], " neither spSpec nor spec FITS file"
                 print "Continue with next file"
@@ -76,6 +76,17 @@ def file_loop(files, compspec, start_iter, end_iter, out_q, out_q2, settings):
                     if build_compspec(compspec, spectra[j]) == 0:
                         # Count the used QSOs, if QSO was used.
                         compspec.spectra_count += 1
+                        # flag spectrum as used and contributed
+                        spectra[j].flag = 0
+                    else:
+                        # flag spectrum as not used, discarded in build_compspec
+                        spectra[j].flag = 3
+                else:
+                    # flag spectrum as not used, because of cut on spectral index
+                    spectra[j].flag = 2
+            else:
+                # flag spectrum as not used, because of redshift
+                spectra[j].flag = 1
             # Every 50th loop, we free all objects, which are not used anymore. 
             # This function is called automatically, but not often enough. Reduces
             # memory usage quite a lot.
@@ -109,13 +120,18 @@ def main(args, settings = program_settings()):
     print "The program will be run with", settings.nprocs, "subprocesses."
     # Basic declarations
     # Create a list of all files contained in input file; easier to work with
-    files = list(settings.inputfile)
+
+    if settings.spectra_list:
+        files = settings.spectra_list
+    else:
+        files = list(settings.inputfile)
     nspec = len(files)
     # Create a compspec object with 5763 pixels
     compspec = comp_spectrum(5763)
 
     # Read filename for the output FITS file:
-    settings.outfile = raw_input('Give the name of the output FITS file: ')
+    if settings.outfile == '':
+        settings.outfile = raw_input('Give the name of the output FITS file: ')
 
     # Two Queues are created, which are used for parallel processing. 
     # They will contain:
@@ -164,9 +180,13 @@ def main(args, settings = program_settings()):
     # calculate some statistics, which will be printed to the output FITS file
     statistics(compspec_sum, result_spectra)
     # Create the ouput FITS file
-    build_fits_file(compspec_sum, result_spectra, settings.outfile, settings)
+    if settings.cspec == 0:
+        build_fits_file(compspec_sum, result_spectra, settings.outfile, settings)
     print "Spectra used: ", compspec_sum.spectra_count, "/", nspec
 
+    # If cspec flag is set, we return the compspec object to the program that called this function
+    if settings.cspec:
+        return compspec_sum
 
 if __name__ == "__main__":
     import sys

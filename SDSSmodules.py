@@ -212,7 +212,7 @@ def get_Ebv(spec, dustmap):
     l = spec.coordinates.galactic.l.deg
     b = spec.coordinates.galactic.b.deg
     
-    spec.Ebv = obstools.get_SFD_dust(l, b, dustmap, interpolate=False)
+    spec.Ebv = obstools.get_SFD_dust(l, b, dustmap, interpolate=1)
 
 def Gal_extinction_correction(spec):
 # Function which applies the E(B-V) value to the corrections to the flux of
@@ -569,6 +569,8 @@ def build_compspec(cspec, spec):
 # by adding flux/powerlaw values in a certain Restframe wavelength range
     # Define Restrange array:
     Restrange = []
+    # 1095, 1150
+    # 1110, 1135 tested
     Restrange = np.array([[1095,1150],[982,1010],[955,968],[912,947]])
 
     # Set the interval bounds of the QSO wavelengths, which are used
@@ -711,9 +713,10 @@ def build_fits_file(cspec, spec, outfile, settings):
     npix = 0
     date_time = datetime.now()
 
-    hdu0_row1 = []
-    hdu0_row2 = []
-    hdu0_row3 = []
+    hdu0_row1 = []              # 1 - average transmittance metal calibrated
+    hdu0_row2 = []              # error of average transmittance
+    hdu0_row3 = []              # number of contributing objects to wavelength
+    hdu0_row4 = []              # 1 - average transmittance not calibrated
     for i in xrange(sidx, 3000):
         if cspec.nhist[i] > 0:
             npix = i+1
@@ -738,15 +741,40 @@ def build_fits_file(cspec, spec, outfile, settings):
     prihdr['CD1_1']   = coeff1
     prihdr['DR']      = (10, 'SDSS Data release used')
 
-
     # run over all pixels and append elements to new arrays
+    # note: row1 is technically not the 'optical depth tau'
+    # instead it is 1 - average transmittance
+    # row1 will be calibrated for metal afterwards
+    # row2 simply the error of the average transmittance
+    # row3 the number of contributing objects to each wavelength
+    # row4 is the average transmittance not calibrated for metals
     for i in xrange(npix):
         hdu0_row1.append(1 - cspec.flux[sidx+i])
         hdu0_row2.append(cspec.flux_error[sidx+i])
         hdu0_row3.append(cspec.nhist[sidx+i])
+    # create row4 of the hdu. At the moment the same as row1, however row1 
+    # will be changed after this
+    hdu0_row4 = list(hdu0_row1)
+
+    # Next up: metal corrections, based on:
+    # \tau_corr(z) = 0.72(1+z)^(0.17) \tau_uncorr(z)
+    # Schaye et al. (2003)
+    # we need to assign a redshift to each pixel, thus we create the
+    # zem array. Then, we first calculate the real optical depth from
+    # hdu0_row1 (which technically is 1 - average transmittance) by
+    # tau = - log10(average transmittance)
+    # apply the correction and revert the optical depth back to 
+    # 1 - average transmittance
+    zem = 10**(log10(cspec.wave[sidx]) + coeff1*np.arange(npix)) / 1215.67 - 1
+    for i in xrange(len(hdu0_row1)):
+        hdu0_row1[i] = -log10(1 - hdu0_row1[i])
+        zem_temp     = zem[i]
+        hdu0_row1[i] = 0.72*(1+zem_temp)**(0.17) * hdu0_row1[i]
+        hdu0_row1[i] = 1 - 10**(-hdu0_row1[i])
+
     # zip arrays; will create one array of 3 tuples from the three
     # individual arrays
-    zipped_hdu0 = zip(hdu0_row1, hdu0_row2, hdu0_row3)
+    zipped_hdu0 = zip(hdu0_row1, hdu0_row2, hdu0_row3, hdu0_row4)
     # currently wrong format, so we transpose the array
     zipped_hdu0 = np.transpose(zipped_hdu0)
 
@@ -755,9 +783,9 @@ def build_fits_file(cspec, spec, outfile, settings):
 
     # Create 2nd HDU containing information on all QSOs
     # Calculate arrays, which will fill the table HDU
-    mjd_array         = map(lambda spec: spec.MJD, spec)
-    plate_array       = map(lambda spec: spec.plateid, spec)
-    fiber_array       = map(lambda spec: spec.fiberid, spec) 
+    mjd_array         = map(lambda spec: int(spec.MJD), spec)
+    plate_array       = map(lambda spec: int(spec.plateid), spec)
+    fiber_array       = map(lambda spec: int(spec.fiberid), spec) 
     alpha_array       = map(lambda spec: spec.alpha, spec)
     alpha_error_array = map(lambda spec: spec.alpha_error, spec)
     ra_array          = map(lambda spec: spec.coordinates.ra.deg, spec)
@@ -766,13 +794,13 @@ def build_fits_file(cspec, spec, outfile, settings):
     b_array           = map(lambda spec: spec.coordinates.galactic.b.deg, spec)
     zem_array         = map(lambda spec: spec.z, spec)
     smag_array        = map(lambda spec: spec.smag, spec)
-    #flag_array 
+    flag_array        = map(lambda spec: int(spec.flag), spec)
 
     # write arrays to Table HDU:
     TableHDU = fits.new_table(
-        fits.ColDefs([fits.Column(name='MJD',    format='D', array=mjd_array),
-                      fits.Column(name='PLATE',  format='D', array=plate_array),
-                      fits.Column(name='FIBER',  format='D', array=fiber_array),
+        fits.ColDefs([fits.Column(name='MJD',    format='J', array=mjd_array),
+                      fits.Column(name='PLATE',  format='J', array=plate_array),
+                      fits.Column(name='FIBER',  format='J', array=fiber_array),
                       fits.Column(name='RA',     format='D', array=ra_array),
                       fits.Column(name='DEC',    format='D', array=dec_array),
                       fits.Column(name='ALPHA',  format='D', array=alpha_array),
@@ -780,8 +808,8 @@ def build_fits_file(cspec, spec, outfile, settings):
                       fits.Column(name='l',      format='D', array=l_array),
                       fits.Column(name='b',      format='D', array=b_array),
                       fits.Column(name='ZEM',    format='D', array=zem_array),
-                      fits.Column(name='MAGSPEC',format='PD()', array=smag_array)]))
-     #                 fits.Column(name='FLAG',   format='E', array=flag_array)]))
+                      fits.Column(name='MAGSPEC',format='PD()', array=smag_array),
+                      fits.Column(name='FLAG',   format='I', array=flag_array)]))
     # TODO: check if I can change smag column a little bit
 
 

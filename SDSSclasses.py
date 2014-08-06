@@ -45,6 +45,11 @@ class spectrum:
         self.smag           = []        # spectroscopic magnitudes
         self.status         = []        # status; 1 = good pixel, 0 = bad pixel
         self.snr            = []        # signal to noise ratio
+        self.flag           = 0         # flag, which flags if the quasar was:
+                                        # 0  =  used, contributed to cspec
+                                        # 1  =  not used, because failed red shift check
+                                        # 2  =  not used, because failed spectral index cut
+                                        # 3  =  not used, discarded in build_compspec
 
         self.filename = []              # Filename of FITS file QSO is stored in
         self.plateid = 0                # PlateID of spectrum
