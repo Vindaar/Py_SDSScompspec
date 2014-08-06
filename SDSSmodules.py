@@ -21,7 +21,7 @@ from linfit import linfit
 # obstools contains function to calculate E(B-V) based on Schlegel et. al dust maps
 from astropysics import obstools
 # contains astropy coordinate objects used to work with coordinates
-from astropy.coordinates import ICRS, Galactic
+from astropy.coordinates import SkyCoord
 from astropy import units as u
 # contains function to call date and time
 from datetime import datetime
@@ -61,7 +61,7 @@ def read_spec(qso, spec, settings):
     # Coordinates:
     ra = hdu0header['PLUG_RA']
     dec = hdu0header['PLUG_DEC']
-    spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+    spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
     # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
     # if settings.coords:
     #     if (spec.coordinates.galactic.l.deg >= settings.l_min and
@@ -139,7 +139,7 @@ def read_spSpec(qso, spec, settings):
     # Coordinates:
     ra = hdu0header['RAOBJ']
     dec = hdu0header['DECOBJ']
-    spec.coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
+    spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
     # Check if we make cuts on coordinates. If so, check if object lies within coordinate window
     # if settings.coords:
     #     if (spec.coordinates.galactic.l.deg >= settings.l_min and
@@ -209,9 +209,9 @@ def get_Ebv(spec, dustmap):
 # Function which calculates E(B-V) using obstools, based on Schlegel et. al 
 # dustmaps.     
     # coordinates in galactic longitude, latitude
-    l = spec.coordinates.galactic.l.deg
-    b = spec.coordinates.galactic.b.deg
-    
+    l = spec.coordinates.galactic.l.degree
+    b = spec.coordinates.galactic.b.degree
+
     spec.Ebv = obstools.get_SFD_dust(l, b, dustmap, interpolate=1)
 
 def Gal_extinction_correction(spec):
@@ -788,16 +788,16 @@ def build_fits_file(cspec, spec, outfile, settings):
     fiber_array       = map(lambda spec: int(spec.fiberid), spec) 
     alpha_array       = map(lambda spec: spec.alpha, spec)
     alpha_error_array = map(lambda spec: spec.alpha_error, spec)
-    ra_array          = map(lambda spec: spec.coordinates.ra.deg, spec)
-    dec_array         = map(lambda spec: spec.coordinates.dec.deg, spec)
-    l_array           = map(lambda spec: spec.coordinates.galactic.l.deg, spec)
-    b_array           = map(lambda spec: spec.coordinates.galactic.b.deg, spec)
+    ra_array          = map(lambda spec: spec.coordinates.ra.degree, spec)
+    dec_array         = map(lambda spec: spec.coordinates.dec.degree, spec)
+    l_array           = map(lambda spec: spec.coordinates.galactic.l.degree, spec)
+    b_array           = map(lambda spec: spec.coordinates.galactic.b.degree, spec)
     zem_array         = map(lambda spec: spec.z, spec)
     smag_array        = map(lambda spec: spec.smag, spec)
     flag_array        = map(lambda spec: int(spec.flag), spec)
 
     # write arrays to Table HDU:
-    TableHDU = fits.new_table(
+    TableHDU = fits.BinTableHDU.from_columns(
         fits.ColDefs([fits.Column(name='MJD',    format='J', array=mjd_array),
                       fits.Column(name='PLATE',  format='J', array=plate_array),
                       fits.Column(name='FIBER',  format='J', array=fiber_array),

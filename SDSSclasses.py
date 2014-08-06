@@ -1,5 +1,5 @@
 # contains astropy coordinate objects used to work with coordinates
-from astropy.coordinates import ICRS, Galactic
+from astropy.coordinates import SkyCoord
 from astropy import units as u
 import healpy as hp
 
@@ -28,7 +28,7 @@ class spectrum:
         # Coordinates
         # using astropy.coordinates object. Currently using v0.3.2 of astropy
         # from v0.4 (in develeopment atm) on exchanged with SkyCoord. 
-        self.coordinates = ICRS(ra = 0, dec = 0, unit=(u.degree, u.degree))
+        self.coordinates = SkyCoord(ra = 0*u.degree, dec = 0*u.degree, frame='fk5')
 
         self.npix           = 0         # number of pixels in spectrum
         # Arrays:

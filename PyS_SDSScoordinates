@@ -16,7 +16,7 @@ from SDSSclasses import *
 from SDSSmodules import check_filetype, args_check
 
 # contains astropy coordinate objects used to work with coordinates
-from astropy.coordinates import ICRS, Galactic
+from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy.io import fits
 import numpy as np
@@ -34,6 +34,8 @@ class coordinate_pixel:
         # self.b_max        = 0
         # TODO: think about adding explicit coordinate in l and b to each object?
         self.b, self.l    = hp.pix2ang(nside, pixel_index)
+        self.b_sec        = 0
+        self.l_sec        = 0
         self.spectra_list = []
         self.tau          = 0
         self.tau_error    = 0
@@ -91,13 +93,13 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
         if filetype == 1:
             ra = hdu0header['RAOBJ']
             dec = hdu0header['DECOBJ']
-        coordinates = ICRS(ra = ra, dec = dec, unit=(u.degree, u.degree))
-        print coordinates.ra.deg, coordinates.dec.deg
-        print coordinates.galactic.l.deg, coordinates.galactic.b.deg
-        print "rad:"
-        print coordinates.ra.rad, coordinates.dec.rad
-        print coordinates.galactic.l.rad, coordinates.galactic.b.rad
-        entry = (file, float(coordinates.galactic.l.rad), float(coordinates.galactic.b.rad + np.pi/2.0))
+        coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
+#        print coordinates.ra.degree, coordinates.dec.degree
+#        print coordinates.galactic.l.degree, coordinates.galactic.b.degree
+#        print "rad:"
+#        print coordinates.ra.radian, coordinates.dec.radian
+#        print coordinates.galactic.l.radian, coordinates.galactic.b.radian
+        entry = (file, float(coordinates.galactic.l.radian), float(coordinates.galactic.b.radian + np.pi/2.0))
         spectra_tuple[i] = entry
         if i % 100 == 0:
             print i, " coordinates read."
@@ -119,6 +121,8 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
         pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1])
 #        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
         spectra_map[pixel_index].spectra_list.append(spectra_tuple[i][0])
+        spectra_map[pixel_index].l_sec = spectra_tuple[i][1]
+        spectra_map[pixel_index].b_sec = spectra_tuple[i][2]
 
     return spectra_map
 
@@ -140,6 +144,8 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
 
     hdu0_l         = np.zeros(spectra_map.size)
     hdu0_b         = np.zeros(spectra_map.size)
+    hdu0_l_sec     = np.zeros(spectra_map.size)
+    hdu0_b_sec     = np.zeros(spectra_map.size)
     hdu0_tau       = np.zeros(spectra_map.size)
     hdu0_tau_error = np.zeros(spectra_map.size)
     hdu0_num_contr = np.zeros(spectra_map.size)
@@ -199,15 +205,19 @@ def build_coordinate_fits_file(compspectra, spectra_map, settings):
     for i in xrange(len(spectra_map)):
         hdu0_l[i]         = spectra_map[i].l
         hdu0_b[i]         = spectra_map[i].b
+        hdu0_l_sec[i]     = spectra_map[i].l_sec
+        hdu0_b_sec[i]     = spectra_map[i].b_sec
         print hdu0_l[i], hdu0_b[i], i
         hdu0_tau[i]       = spectra_map[i].tau
         hdu0_tau_error[i] = spectra_map[i].tau_error
         hdu0_num_contr[i] = spectra_map[i].num_contr
 
     # write arrays to Table HDU:
-    TableHDU = fits.new_table(
+    TableHDU = fits.BinTableHDU.from_columns(
         fits.ColDefs([fits.Column(name='l',           format='D', array=hdu0_l),
                       fits.Column(name='b',           format='D', array=hdu0_b),
+                      fits.Column(name='l_sec',       format='D', array=hdu0_l_sec),
+                      fits.Column(name='b_sec',       format='D', array=hdu0_b_sec),
                       fits.Column(name='Tau',         format='D', array=hdu0_tau),
                       fits.Column(name='ETau',        format='D', array=hdu0_tau_error),
                       fits.Column(name='NumContr',    format='D', array=hdu0_num_contr)]))
