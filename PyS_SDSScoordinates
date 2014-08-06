@@ -121,8 +121,9 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
         pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1])
 #        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
         spectra_map[pixel_index].spectra_list.append(spectra_tuple[i][0])
-        spectra_map[pixel_index].l_sec = spectra_tuple[i][1]
-        spectra_map[pixel_index].b_sec = spectra_tuple[i][2]
+        coord = SkyCoord(l = spectra_tuple[i][1]*u.radian, b = (spectra_tuple[i][2] - np.pi/2.0)*u.radian, frame='galactic')
+        spectra_map[pixel_index].l_sec = coord.galactic.l.degree
+        spectra_map[pixel_index].b_sec = coord.galactic.b.degree
 
     return spectra_map
 
