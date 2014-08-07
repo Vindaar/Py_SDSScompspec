@@ -12,7 +12,8 @@ import gc
 # import math
 # # the multiprocessing module
 import multiprocessing as mp
-from guppy import hpy
+# guppy to track memory usage. Currently not used
+# from guppy import hpy
 
 from SDSSmodules import *
 from SDSSclasses import *

@@ -28,6 +28,7 @@ class spectrum:
         # Coordinates
         # using astropy.coordinates object. Currently using v0.3.2 of astropy
         # from v0.4 (in develeopment atm) on exchanged with SkyCoord. 
+        # Done.
         self.coordinates = SkyCoord(ra = 0*u.degree, dec = 0*u.degree, frame='fk5')
 
         self.npix           = 0         # number of pixels in spectrum
