@@ -6,10 +6,13 @@ from pylab import *
 from decimal import *
 import math
 
-
-
 # astropy is used to work with fits files
 from astropy.io import fits
+
+# fitsio based on c
+import fitsio
+from fitsio import FITS, FITSHDR
+
 # re contains the function search, which is used to search for 
 # spec and spSpec in the filenames
 import re
@@ -26,7 +29,44 @@ from astropy import units as u
 # contains function to call date and time
 from datetime import datetime
 
+# different, c based implementation, of fitsio
 import fitsio
+
+
+# cython compiled dust_extinction routine
+# check whether dust_extinction_array was compiled in cython or not. 
+# If not, compile now
+# TODO: check real speed difference between python and cython
+try:
+    from dust_extinction_array import dust_extinction_array
+except ImportError:
+    print 'It seems like dust_extinction_array.pyx was not compiled properly.'
+    print 'This is done by typing:'
+    print 'python setup.py build_ext --inplace'
+    print 'in the folder of PyS_SDSScompspec.py.'
+    print ''
+    if raw_input("Do you wish to compile it now? (y/N) ") == ('y' or 'Y'):
+        import os
+        if os.system("python setup.py build_ext --inplace") == 0:
+            try:
+                from dust_extinction_array import dust_extinction_array
+                print 'compilation successful!'
+                print 'starting program...'
+            except ImportError:
+                print 'compilation not successful'
+                import sys
+                sys.exit("Exit program")
+        else:
+            import sys
+            sys.exit("setup.py is missing or some unknown error occured")
+    else:
+        print "Do you wish to use the python based dust_extinction_array instead?"
+        print "WARNING: it is considerably slower!"
+        if raw_input("(y/N) ") == ('y' or 'Y'):
+            from dust_extinction_python import dust_extinction_array_python as dust_extinction_array 
+        else:
+            import sys
+            sys.exit("Exit program")
 
 from SDSSclasses import *
 
@@ -45,6 +85,129 @@ from SDSSclasses import *
 ######################################################################################
 
 # Need resolving power of spectrum?
+
+def read_spec_fitsio(qso, spec, settings):
+# The same function as read_spec(), but based on fitsio, which is much faster, since
+# it's based on cfitsio
+# Function whic is called to read spec FITS file
+
+    #Open FITS file
+    qso = qso.rstrip()
+    hdu = fitsio.FITS(qso)
+
+
+    # Read in all necessary information from Header of
+    # defining hdu0header is faster than accessing hdu[0].header each time
+    hdu0header = hdu[0].read_header()
+
+    spec.plateid = hdu0header['PLATEID']
+    spec.fiberid = hdu0header['FIBERID']
+    spec.MJD = hdu0header['MJD']
+
+    # Coordinates:
+    ra = hdu0header['PLUG_RA']
+    dec = hdu0header['PLUG_DEC']
+    spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
+    spec.beginwl = hdu0header['COEFF0']
+    spec.deltawl = hdu0header['COEFF1']
+    # Can't find cpix in header, assume it's 1.
+    spec.cpix = 1
+    # defining hdu1 variable is faster than accessing hdu[1] each time
+    hdu1header = hdu[1].read_header()
+    spec.npix = hdu1header['NAXIS2']
+    # Get the table data from HDU 1; it contains the flux
+    # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
+    TableHDU1 = hdu[1]
+    # TODO: maybe make copy?
+    spec.flux = TableHDU1['flux'][:]#.copy()
+
+    # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
+    # TODO: Check if need to copy data?
+    spec.flux_error = sqrt(1/TableHDU1['ivar'][:])
+
+    # Table data from HDU2; contains redshift, MJD and psf magnitudes
+    spec.z = hdu[2]['Z'][0]
+    #print "%.15f" % spec.z
+
+    #magnitudes not needed for now. Did they cause memory overhead? 
+    # TODO: check that!
+    # spec.mag = TableHDU2['PSFMAG'].copy(
+
+    #TODO: Read in primary target information?
+
+    # run over all wavelengths (pixels) and set the wavelength array
+    # as well as the status array and signal to noise ratio
+    # wave, status and snr are all numpy arrays
+    spec.wave    = 10.0**(spec.beginwl + (np.arange(spec.npix) + 1 - spec.cpix)*spec.deltawl)
+    # use Numpy's logical operations, to determine the status array
+    spec.status  = spec.flux_error > 0
+    # determine snr by multiplying the arrays
+    # np.seterr(all='raise')
+    # try:
+    #     spec.snr     = spec.flux / spec.flux_error
+    # except FloatingPointError:
+    #     for i in xrange(spec.npix):
+    #         if spec.flux_error[i] != 0:
+    #             spec.snr.append(spec.flux[i] / spec.flux_error[i])
+    #         else:
+    #             spec.snr.append(0)
+            
+    del(TableHDU1)
+    hdu.close()
+    return 0
+
+
+
+def read_spSpec_fitsio(qso, spec, settings):
+# same function as read_spSpec implemented with fitsio instead of astropy
+# Function which is called to read spSpec FITS file
+
+    #Open FITS file
+    qso = qso.rstrip()
+    hdu = fitsio.FITS(qso)
+
+    #Read in all necessary information from Header of HDU 0:
+    hdu0header = hdu[0].read_header()
+    spec.plateid = hdu0header['PLATEID']
+    spec.fiberid = hdu0header['FIBERID']
+
+    # Coordinates:
+    ra = hdu0header['RAOBJ']
+    dec = hdu0header['DECOBJ']
+    spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
+    spec.MJD = hdu0header['MJD']
+    spec.z = hdu0header['Z']
+    spec.mag = hdu0header['MAG']
+    spec.npix = hdu0header['NAXIS1']
+    spec.beginwl = hdu0header['CRVAL1']
+    spec.deltawl = hdu0header['CD1_1']
+    spec.cpix = hdu0header['CRPIX1']
+    #Open ImageData from HDU 0 and thus retrieve the flux and the error
+    ImageData = hdu[0].read()
+    spec.flux = ImageData[0, 0:spec.npix].copy()
+    spec.flux_error = ImageData[2, 0:spec.npix].copy()
+    
+    # run over all wavelengths (pixels) and set the wavelength array
+    # as well as the status array and signal to noise ratio
+    # wave, status and snr are all numpy arrays
+    spec.wave    = 10.0**(spec.beginwl + (np.arange(spec.npix) + 1 - spec.cpix)*spec.deltawl)
+    # use Numpy's logical operations, to determine the status array
+    spec.status  = spec.flux_error > 0
+    # determine snr by multiplying the arrays
+    # np.seterr(all='raise')
+    # try:
+    #     spec.snr     = spec.flux / spec.flux_error
+    # except FloatingPointError:
+    #     for i in xrange(spec.npix):
+    #         if spec.flux_error[i] != 0:
+    #             spec.snr.append(spec.flux[i] / spec.flux_error[i])
+    #         else:
+    #             spec.snr.append(0)
+    del(ImageData)
+    hdu.close()
+    return 0
+# What is primary target flag needed for?
+
 def read_spec(qso, spec, settings):
 # Function whic is called to read spec FITS file
 
@@ -88,7 +251,6 @@ def read_spec(qso, spec, settings):
     spec.flux_error = sqrt(1/TableHDU1['ivar'])
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
-    TableHDU2 = hdu[2].data
     spec.z = hdu[2].data['Z'][0]
     #print "%.15f" % spec.z
 
@@ -105,23 +267,17 @@ def read_spec(qso, spec, settings):
     # use Numpy's logical operations, to determine the status array
     spec.status  = spec.flux_error > 0
     # determine snr by multiplying the arrays
-    spec.snr     = spec.flux / spec.flux_error
+    # np.seterr(all='raise')
+    # try:
+    #     spec.snr     = spec.flux / spec.flux_error
+    # except FloatingPointError:
+    #     for i in xrange(spec.npix):
+    #         if spec.flux_error[i] != 0:
+    #             spec.snr.append(spec.flux[i] / spec.flux_error[i])
+    #         else:
+    #             spec.snr.append(0)
 
-    # old, more inefficient way of determining elements of status, snr and wave
-    #for i in xrange(spec.npix):
-        # spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
-
-        # check if flux_error > 0, because normalisation in snr divides by it
-        # if spec.flux_error[i] > 0: 
-        #     spec.status.append(1)
-        #     spec.snr.append(spec.flux[i] / spec.flux_error[i])
-        # # if flux_error > 0 simply set status and error to 0
-        # else:
-        #     spec.status.append(0)
-        #     spec.snr.append(0)
- 
     del(TableHDU1)
-    del(TableHDU2)
     hdu.close()
     return 0
 
@@ -172,17 +328,15 @@ def read_spSpec(qso, spec, settings):
     # use Numpy's logical operations, to determine the status array
     spec.status  = spec.flux_error > 0
     # determine snr by multiplying the arrays
-    spec.snr     = spec.flux / spec.flux_error
-
-
-    # for i in xrange(spec.npix):
-    #     spec.wave.append(10.0**(spec.beginwl + (i+1 - spec.cpix)*spec.deltawl))
-    #     if spec.flux_error[i] > 0: 
-    #         spec.status.append(1)
-    #         spec.snr.append(spec.flux[i] / spec.flux_error[i])
-    #     else:
-    #         spec.status.append(0)
-    #         spec.snr.append(0)
+    # np.seterr(all='raise')
+    # try:
+    #     spec.snr     = spec.flux / spec.flux_error
+    # except FloatingPointError:
+    #     for i in xrange(spec.npix):
+    #         if spec.flux_error[i] != 0:
+    #             spec.snr.append(spec.flux[i] / spec.flux_error[i])
+    #         else:
+    #             spec.snr.append(0)
 
     del(ImageData)
     hdu.close()
@@ -205,14 +359,87 @@ def check_filetype(filename):
 ############################## Dust corrections ################################
 ################################################################################
 
-def get_Ebv(spec, dustmap):
-# Function which calculates E(B-V) using obstools, based on Schlegel et. al 
-# dustmaps.     
-    # coordinates in galactic longitude, latitude
-    l = spec.coordinates.galactic.l.degree
-    b = spec.coordinates.galactic.b.degree
+def fill_coordinate_arrays_from_buffer(coords, spec, dustmap, i, j):
+# a function which fills the arrays of the coordinate_arrays
+# object from the buffer, i.e. from index i to index i+j
+# after that get Ebv values from dustmap
+    coords.ra_array[i:i+j]  = map(lambda spec: spec.coordinates.ra.deg,  spec[i:i+j])
+    coords.dec_array[i:i+j] = map(lambda spec: spec.coordinates.dec.deg, spec[i:i+j])
+    temp_sky_objs    = SkyCoord(ra = coords.ra_array[i:i+j]*u.degree, dec = coords.dec_array[i:i+j]*u.degree, frame='fk5')
+    coords.l_array[i:i+j]   = temp_sky_objs.galactic.l.deg
+    coords.b_array[i:i+j]   = temp_sky_objs.galactic.b.deg
+    Ebv = obstools.get_SFD_dust(coords.l_array[i:i+j], coords.b_array[i:i+j], dustmap, interpolate=2)
+    k = 0
+    for i in xrange(i, i+j):
+        spec[i].Ebv = Ebv[k]
+        k += 1
+    
+# def dust_extinction(wavel, R_V):
+#     # taken straight from C code, dust_extinct.c
+#     # * Mean extinction law A(l) / A(V) (l in Angstrom)
+#     # * R = A(V) / E(B-V)
+#     # *
+#     # * Cardelli et al., 1989, ApJ, 345, 245 (MW: Far-UV, UV and NIR)
+#     # * O'Donnell, 1994, ApJ, 422, 158 (MW: optical)
+#     # * Pei, 1992, ApJ, 395, 130 (MW, LMC, SMC)
+#     # *
+#     # * Options:
+#     # * 0 = MW from CCM + O'Donnell
+#     # Only taken option 0, since that's the one used in C
+    
+#     # For option 0, there are not empirical data below 1000A or above 33um
+#     # so the value of A(V)/A(l) for any wavelengths entered beyond these
+#     # ranges simply represent extrapolations of the CCM fitting
+#     # functions. They should not be treated as reliable.
 
-    spec.Ebv = obstools.get_SFD_dust(l, b, dustmap, interpolate=1)
+#     # TODO: compile dust_extinct.c with Cython and import as module
+
+#     xx1 = xx2 = xx3 = xx4 = xx5 = xx6 = 0.0
+#     a = 0.0
+#     b = 0.0
+#     x = y = 0.0
+#     x = 1000.0 / wavel
+
+#     if x <= 1.1:
+#         # NIR 
+#         xx1 = pow(x, 1.61)
+#         a = 0.574 * xx1
+#         b = -0.527 * xx1
+#     elif x <= 3.3:
+#         # Optical 
+#         y = x - 1.82
+#         xx1 = y * y * y
+#         xx2 = xx1 * y
+#         xx3 = xx2 * y
+#         xx4 = xx3 * y
+#         xx5 = xx4 * y
+#         xx6 = xx5 * y
+#         a = 1.0 + 0.104 * y - 0.609 * y * y + 0.701 * xx1 + 1.137 * xx2 - 1.718 * xx3 - 0.827 * xx4 + 1.647 * xx5 - 0.505 * xx6
+#         b = 1.952 * y + 2.908 * y * y - 3.989 * xx1 - 7.985 * xx2 + 11.102 * xx3 + 5.491 * xx4 - 10.805 * xx5 + 3.347 * xx6
+#     elif x <= 8.0:
+#         # UV
+#         xx1 = x - 4.67
+#         xx2 = xx1 * xx1
+#         xx3 = x - 4.62
+#         xx4 = xx2 * xx2
+#         a = 1.752 - 0.316 * x - 0.104 / (xx2 + 0.341)
+#         b = -3.09 + 1.825 * x + 1.206 / (xx4 + 0.263)
+#         if x >= 5.9:
+#             xx3 = x - 5.9
+#             xx4 = xx3 * xx3
+#             xx5 = xx4 * xx3
+#             a += -0.04473 * xx4 - 0.009779 * xx5
+#             b += 0.213 * xx4 + 0.1207 * xx5
+#     else:
+#         # Far UV
+#         xx1 = x - 8.0
+#         xx2 = xx1 * xx1
+#         xx3 = xx2 * xx1
+#         a = -1.073 - 0.628 * xx1 + 0.137 * xx2 - 0.07 * xx3
+#         b = 13.67 + 4.257 * xx1 - 0.42 * xx2 + 0.374 * xx3
+
+#     # returns A_lam
+#     return (a + b / R_V)
 
 def Gal_extinction_correction(spec):
 # Function which applies the E(B-V) value to the corrections to the flux of
@@ -221,24 +448,21 @@ def Gal_extinction_correction(spec):
     R_V = 3.08
 
     # A_V not necessary?
-#    A_V = R_V*spec.Ebv
+    A_V = R_V*spec.Ebv
 
- #   A_lam = obstools.extinction_correction(spec.flux, spec.wave, spec.Ebv, Rv=R_V)
-    print "flux: 1", spec.flux[123]
-    spec.flux = obstools.extinction_correction(spec.flux, spec.wave, spec.Ebv, Rv=R_V)
-#    print A_lam
 #    for i in xrange(spec.npix):
-        # check on A_lam? Maybe can return problematic value?
-        # I suppose the next line is not necessary, as we already include Ebv and R_V into
-        # the function?
-        # A_lam *= A_V 
- 
-#        redfac = 10.0**(0.4*A_lam)
-#        spec.flux[i] *= redfac
-#        spec.flux_error[i] *= redfac
-        
-    print "flux: 2", spec.flux[123]
-#    print "A_lam, redfac: ", A_lam, redfac
+#        A_lam = obstools.extinction_correction(None, spec.wave[i], spec.Ebv, Rv=R_V)
+#        A_lam = dust_extinction(wave[i], R_V)
+#        A_lam *= A_V
+#        redfac = 10**(0.4*A_lam)
+#        flux[i]       *= redfac
+#        flux_error[i] *= redfac
+
+# version using obstools
+#    spec.flux = obstools.extinction_correction(spec.flux, spec.wave, spec.Ebv, Rv=R_V)
+    spec.flux, spec.flux_error = dust_extinction_array(spec.flux, spec.flux_error, spec.wave, R_V, A_V, spec.npix)
+
+
 
 
 ################################################################################
@@ -658,7 +882,8 @@ def statistics(cspec, spec):
         parameters.write(str(cspec.sum[i])+"     "+str(cspec.nhist[i])+"     "+str(cspec.sum2[i])+'\n')
     parameters.close()
 
-    for i in xrange(3000):
+    # Changed 3000 pixels to 4000, because in DR10 big sidx values appear
+    for i in xrange(4000):
         # if nhist is non zero (because we divide by it) 
         if cspec.nhist[i] > 0:
             # we add the flux of the composite spectrum as:
@@ -705,6 +930,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     # set a few variables
     i = 0
     coeff1 = 0.0001
+    nspec = len(spec)
     # TODO: FOLLOWING line is wrong? Should be nhist[i]. Changed!
     # while cspec.nhist == 0:
     while cspec.nhist[i] == 0:
@@ -717,7 +943,8 @@ def build_fits_file(cspec, spec, outfile, settings):
     hdu0_row2 = []              # error of average transmittance
     hdu0_row3 = []              # number of contributing objects to wavelength
     hdu0_row4 = []              # 1 - average transmittance not calibrated
-    for i in xrange(sidx, 3000):
+    # changed to 4000, since sidx pretty big in DR10
+    for i in xrange(sidx, 4000):
         if cspec.nhist[i] > 0:
             npix = i+1
 
@@ -731,7 +958,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     prihdr['ARRAY1']  = ('ERR', '1 Sigma')
     prihdr['ARRAY2']  = ('NPOINTS', 'Number of contributing pixels')
     prihdr['NSPECTRA']= (cspec.spectra_count, 'Total number of contributing QSOs')
-    prihdr['NSPEC']   = (len(spec), 'Total number of contributing QSOs')
+    prihdr['NSPEC']   = (nspec, 'Total number of contributing QSOs')
     prihdr['VACUUM']  = (1, 'Wavelengths are in vacuum')
     prihdr['DC_FLAG'] = (1, 'Log-Linear Flag')
     prihdr['CRPIX1']  = (1, 'Starting pixel (1-indexed)')
@@ -748,6 +975,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     # row2 simply the error of the average transmittance
     # row3 the number of contributing objects to each wavelength
     # row4 is the average transmittance not calibrated for metals
+    print 'creation of arrays for HDU0'
     for i in xrange(npix):
         hdu0_row1.append(1 - cspec.flux[sidx+i])
         hdu0_row2.append(cspec.flux_error[sidx+i])
@@ -765,15 +993,24 @@ def build_fits_file(cspec, spec, outfile, settings):
     # tau = - log10(average transmittance)
     # apply the correction and revert the optical depth back to 
     # 1 - average transmittance
-    zem = 10**(log10(cspec.wave[sidx]) + coeff1*np.arange(npix)) / 1215.67 - 1
+    np.seterr(all='raise')
+    print 'applying metal correction'
+    zem = 10**(np.log10(cspec.wave[sidx]) + coeff1*np.arange(npix)) / 1215.67 - 1
+    # TODO: change len(hdu0_row1) to npix? 
     for i in xrange(len(hdu0_row1)):
-        hdu0_row1[i] = -log10(1 - hdu0_row1[i])
-        zem_temp     = zem[i]
-        hdu0_row1[i] = 0.72*(1+zem_temp)**(0.17) * hdu0_row1[i]
-        hdu0_row1[i] = 1 - 10**(-hdu0_row1[i])
+        try:
+            hdu0_row1[i] = -np.log10(1 - hdu0_row1[i])
+            zem_temp     = zem[i]
+            hdu0_row1[i] = 0.72*(1+zem_temp)**(0.17) * hdu0_row1[i]
+            hdu0_row1[i] = 1 - 10**(-hdu0_row1[i])
+        except FloatingPointError:
+            print i, 'set to zero'
+            # TODO: probably shouldn't be zero? 1 instead, because that's when the error occurs
+            hdu0_row1[i] = 1
 
     # zip arrays; will create one array of 3 tuples from the three
     # individual arrays
+    print 'zipping arrays for HDU0'
     zipped_hdu0 = zip(hdu0_row1, hdu0_row2, hdu0_row3, hdu0_row4)
     # currently wrong format, so we transpose the array
     zipped_hdu0 = np.transpose(zipped_hdu0)
@@ -783,20 +1020,58 @@ def build_fits_file(cspec, spec, outfile, settings):
 
     # Create 2nd HDU containing information on all QSOs
     # Calculate arrays, which will fill the table HDU
-    mjd_array         = map(lambda spec: int(spec.MJD), spec)
-    plate_array       = map(lambda spec: int(spec.plateid), spec)
-    fiber_array       = map(lambda spec: int(spec.fiberid), spec) 
-    alpha_array       = map(lambda spec: spec.alpha, spec)
-    alpha_error_array = map(lambda spec: spec.alpha_error, spec)
-    ra_array          = map(lambda spec: spec.coordinates.ra.degree, spec)
-    dec_array         = map(lambda spec: spec.coordinates.dec.degree, spec)
-    l_array           = map(lambda spec: spec.coordinates.galactic.l.degree, spec)
-    b_array           = map(lambda spec: spec.coordinates.galactic.b.degree, spec)
-    zem_array         = map(lambda spec: spec.z, spec)
-    smag_array        = map(lambda spec: spec.smag, spec)
-    flag_array        = map(lambda spec: int(spec.flag), spec)
+    # TODO: optimize creation of arrays! Lots of potential probably
+
+    print 'creation of arrays for HDU1'
+    mjd_array         = np.zeros(nspec)
+    plate_array       = np.zeros(nspec)
+    fiber_array       = np.zeros(nspec)
+    alpha_array       = np.zeros(nspec)
+    alpha_error_array = np.zeros(nspec)
+    ra_array          = np.zeros(nspec)
+    dec_array         = np.zeros(nspec)
+    l_array           = np.zeros(nspec)
+    b_array           = np.zeros(nspec)
+    zem_array         = np.zeros(nspec)
+    flag_array        = np.zeros(nspec)
+    smag_array        = []
+
+    for i in xrange(nspec):
+        mjd_array[i]         = spec[i].MJD
+        plate_array[i]       = spec[i].plateid
+        fiber_array[i]       = spec[i].fiberid
+        alpha_array[i]       = spec[i].alpha
+        alpha_error_array[i] = spec[i].alpha_error
+        ra_array[i]          = spec[i].coordinates.ra.degree
+        dec_array[i]         = spec[i].coordinates.dec.degree
+#        l_array[i]           = spec[i].coordinates.galactic.l.degree
+#        b_array[i]           = spec[i].coordinates.galactic.b.degree
+        zem_array[i]         = spec[i].z
+        flag_array[i]        = int(spec[i].flag)
+        smag_array.append(spec[i].smag)
+        if i % 500 == 0:
+            print i, "spectra added to arrays"
+    
+    print "create galactic coordinate arrays"
+    coord_objs = SkyCoord(ra = ra_array*u.degree, dec = dec_array*u.degree, frame='fk5')
+    l_array    = coord_objs.galactic.l.deg
+    b_array    = coord_objs.galactic.b.deg
+
+    # mjd_array         = map(lambda spec: int(spec.MJD), spec)
+    # plate_array       = map(lambda spec: int(spec.plateid), spec)
+    # fiber_array       = map(lambda spec: int(spec.fiberid), spec) 
+    # alpha_array       = map(lambda spec: spec.alpha, spec)
+    # alpha_error_array = map(lambda spec: spec.alpha_error, spec)
+    # ra_array          = map(lambda spec: spec.coordinates.ra.degree, spec)
+    # dec_array         = map(lambda spec: spec.coordinates.dec.degree, spec)
+    # l_array           = map(lambda spec: spec.coordinates.galactic.l.degree, spec)
+    # b_array           = map(lambda spec: spec.coordinates.galactic.b.degree, spec)
+    # zem_array         = map(lambda spec: spec.z, spec)
+    # smag_array        = map(lambda spec: spec.smag, spec)
+    # flag_array        = map(lambda spec: int(spec.flag), spec)
 
     # write arrays to Table HDU:
+    print 'write arrays to HDU1'
     TableHDU = fits.BinTableHDU.from_columns(
         fits.ColDefs([fits.Column(name='MJD',    format='J', array=mjd_array),
                       fits.Column(name='PLATE',  format='J', array=plate_array),
@@ -824,6 +1099,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     
 
     # hdu.writeto('test.fits')
+    print 'write FITS file'
     hdulist = fits.HDUList([hdu, TableHDU])
     # write to outfile and 'clobber=True' -> overwrite if existing
     hdulist.writeto(outfile, clobber=True)

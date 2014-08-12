@@ -15,6 +15,7 @@ import multiprocessing as mp
 # guppy to track memory usage. Currently not used
 # from guppy import hpy
 
+
 from SDSSmodules import *
 from SDSSclasses import *
 
@@ -40,10 +41,9 @@ def main(args, settings = program_settings()):
     # is already given in settings object.
 
     # Read in filename and settings from command line
-    
+    print 'Checking command line arguments'
     if args_check(args, settings) == 0:
         return 0
-
 
     # Basic declarations
     if settings.spectra_list:
@@ -51,10 +51,16 @@ def main(args, settings = program_settings()):
     else:
         files = list(settings.inputfile)
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
-    spectra = np.array([spectrum() for i in xrange(len(files))])
+    print 'creating array of spectrum objects'
+    nspec = len(files)
+    spectra = np.array([spectrum() for i in xrange(nspec)])
+    print 'creating object storing coordinate arrays'
+    coordinates = coordinate_arrays(nspec)
+
     # Create a compspec object with 5763 pixels. Taken from C code
     compspec = comp_spectrum(5763)
     i = 0
+    print 'create color curves'
     a = create_colorcurves()
     alpha_top = 1.5
     alpha_low = -2
@@ -75,24 +81,41 @@ def main(args, settings = program_settings()):
     if settings.outfile == '':
         settings.outfile = raw_input('Give the name of the output FITS file: ')
 
+    # Do filetype check only once
+    filetype = check_filetype(files[0])
+
     # Start the loop over all files in the 
     for i, file in enumerate(files):
-        print "Starting with spectrum #: ", i
-        filetype = check_filetype(file)
-        if filetype == 1:
-            # If the return value is one, we do a check on coordinates and this 
-            # object is outside the wanted boundaries. Therefore neglect and continue
-            if read_spSpec(file, spectra[i], settings) == 1:
-                continue
-        if filetype == 2:
-            if read_spec(file, spectra[i], settings) == 1:
-                continue
+        if i % 5000 == 0:
+            # this buffer is used to read a bunch of fits files after another,
+            # because that way the reading is much faster. Needs more memory
+            # of course.
+            if i+5000 < len(files):
+                buffer = 5000
+            else:
+                buffer = len(files) - i
+            for j in xrange(buffer):
+                if j % 100 == 0:
+                    print "Reading spectrum #: ", j
+                if filetype == 1:
+                    # If the return value is one, we do a check on coordinates and this 
+                    # object is outside the wanted boundaries. Therefore neglect and continue
+                    if read_spSpec_fitsio(files[i+j], spectra[i+j], settings) == 1:
+                        continue
+                if filetype == 2:
+                    if read_spec_fitsio(files[i+j], spectra[i+j], settings) == 1:
+                        continue
+            # Fill the l and b arrays with the coordinates of the buffer
+            # and get the E(B-V) values from the dustmap
+            print 'filling coordinate arrays from buffer...'
+            fill_coordinate_arrays_from_buffer(coordinates, spectra, dustmap, i, buffer)
+        if i % 100 == 0:
+            print "Working on spectrum #: ", i
         spectra[i].filename = file
         # Conditions on the QSOs:
         if spectra[i].z >= 2.2 and spectra[i].z <= 5.3:
             # Dust corrections. Only done, if --dust flag is set on startup
             if settings.dust == 1:
-                get_Ebv(spectra[i], dustmap)
                 Gal_extinction_correction(spectra[i])
 
             # Build the median array? Use: flux, continuum, npix,
@@ -126,11 +149,11 @@ def main(args, settings = program_settings()):
         # This function is called automatically, but not often enough. Reduces
         # memory usage quite a lot.
         if spectra[i].alpha == -999:
-            print ""
-            print ""
-            print file, spectra[i].alpha, spectra[i].z
+            # print ""
+            # print ""
+            # print file, spectra[i].alpha, spectra[i].z
             alpha_wrong_count += 1
-        if i % 50 == 0:
+        if i % 500 == 0:
             gc.collect()
         # Free all big arrays, which won't be needed anymore, after this loop. 
         # Unecessary memory usage.

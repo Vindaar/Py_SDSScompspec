@@ -33,7 +33,7 @@ class coordinate_pixel:
         # self.b_min        = 0
         # self.b_max        = 0
         # TODO: think about adding explicit coordinate in l and b to each object?
-        self.b, self.l    = hp.pix2ang(nside, pixel_index)
+        self.b, self.l    = hp.pix2ang(nside, pixel_index, nest=False)
         self.b_sec        = 0
         self.l_sec        = 0
         self.spectra_list = []
@@ -48,8 +48,8 @@ def create_coord_map(settings):
 
     spectra_map = np.arange((settings.map_npix), dtype=object)
     # Create coordinate pixel for each element in map. Do in more pythonic way?
-    for i in xrange(settings.map_npix):
-        spectra_map[i]   = coordinate_pixel(i, settings.map_nside)
+    for pixel_index in xrange(settings.map_npix):
+        spectra_map[pixel_index]   = coordinate_pixel(pixel_index, settings.map_nside)
 
     # Using HEALpy, we don't need a specific coord_map, since the coordinates
     # are only stored implicitly
@@ -99,7 +99,8 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
 #        print "rad:"
 #        print coordinates.ra.radian, coordinates.dec.radian
 #        print coordinates.galactic.l.radian, coordinates.galactic.b.radian
-        entry = (file, float(coordinates.galactic.l.radian), float(coordinates.galactic.b.radian + np.pi/2.0))
+        b = (-1)*coordinates.dec.radian+np.pi/2.0 if -np.pi/2.0 <= coordinates.dec.radian < 0 else coordinates.dec.radian
+        entry = (file, float(coordinates.ra.radian), float(b))
         spectra_tuple[i] = entry
         if i % 100 == 0:
             print i, " coordinates read."
@@ -118,10 +119,10 @@ def read_inputfiles_and_sort_by_coords(settings, spectra_map):
         # b = latitude  = theta element of [0, pi]
         # maybe have to add pi/2 to b, since it might be given from -pi/2 to pi/2
         # Yes. Done in spectra_tuple
-        pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1])
+        pixel_index = hp.ang2pix(settings.map_nside, spectra_tuple[i][2], spectra_tuple[i][1], nest=False)
 #        print spectra_tuple[i][1], spectra_tuple[i][2], hp.pix2ang(settings.map_nside, pixel_index)
         spectra_map[pixel_index].spectra_list.append(spectra_tuple[i][0])
-        coord = SkyCoord(l = spectra_tuple[i][1]*u.radian, b = (spectra_tuple[i][2] - np.pi/2.0)*u.radian, frame='galactic')
+        coord = SkyCoord(ra = spectra_tuple[i][1]*u.radian, dec = (spectra_tuple[i][2] - np.pi/2.0)*u.radian, frame='fk5')
         spectra_map[pixel_index].l_sec = coord.galactic.l.degree
         spectra_map[pixel_index].b_sec = coord.galactic.b.degree
 

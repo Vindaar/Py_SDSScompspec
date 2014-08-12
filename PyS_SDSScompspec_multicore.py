@@ -61,7 +61,7 @@ def file_loop(files, compspec, start_iter, end_iter, out_q, out_q2, out_qcoord_t
             if filetype == 1:
                 read_spSpec(files[i], spectra[j], settings)
             if filetype == 2:
-                read_spec(files[i], spectra[j], settings)
+                read_spec_fitsio(files[i], spectra[j], settings)
             elif filetype == 0:
                 print "File ", files[i], " neither spSpec nor spec FITS file"
                 print "Continue with next file"
@@ -177,6 +177,8 @@ def main(args, settings = program_settings()):
     print nspec, chunksize
     
     # loop over the number of processes and create a new process
+
+    print 'Start parallel processes'
     for i in xrange(settings.nprocs):
         # create a new process
         p = mp.Process(target=file_loop, 
@@ -193,8 +195,12 @@ def main(args, settings = program_settings()):
     result_compspec = []
     # run over the number of processes in order to generate a final
     # dictionary containing all spectra and a list of all compspecs
+    print 'Start combining results of parallel processes'
     for i in xrange(settings.nprocs):
-        result_spectra.append(out_q.get())
+        try:
+            result_spectra.append(out_q.get())
+        except Empty:
+            print i, 'Empty exception raised on element'
         # get next object from out_qcoord_temp queue and save those
         # coordinates in spectra.coordinate object (SkyCoord)
         coordinate_temp_array = out_qcoord_temp.get()
@@ -208,9 +214,11 @@ def main(args, settings = program_settings()):
             result_spectra[i][j].coordinates = SkyCoord(ra = ra, dec = dec, frame='fk5')
         result_compspec.append(out_q2.get())
     # wait for all processes to finish
+    print 'Finished appending items from queues to lists, starting to join...'
     for p in procs:
         p.join()
 
+    print 'Finished joining processes'
     # result_spectra now contains a list of nprocs numpy arrays, which contains the spectra.
     # We want a numpy array of spectra instread:
     # TODO: Think of nicer way to do this

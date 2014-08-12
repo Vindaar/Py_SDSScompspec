@@ -2,6 +2,7 @@
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import healpy as hp
+import numpy as np
 
 
 ################################################################################
@@ -80,6 +81,14 @@ class comp_spectrum:
             self.sum2.append(0)
             self.nhist.append(0)
             self.wave.append(10.0**(3.58020 + 0.0001*i))
+
+# Class to store coordinate arrays
+class coordinate_arrays:
+    def __init__(self, nspec):
+        self.ra_array  = np.zeros(nspec)
+        self.dec_array = np.zeros(nspec)
+        self.l_array   = np.zeros(nspec)
+        self.b_array   = np.zeros(nspec)
 
 # Class for the program settings
 
