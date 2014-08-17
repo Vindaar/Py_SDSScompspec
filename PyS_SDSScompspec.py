@@ -51,6 +51,11 @@ def main(args, settings = program_settings()):
     else:
         files = list(settings.inputfile)
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+
+    # Read filename for the output FITS file:
+    if settings.outfile == '':
+        settings.outfile = raw_input('Give the name of the output FITS file: ')
+
     print 'creating array of spectrum objects'
     nspec = len(files)
     spectra = np.array([spectrum() for i in xrange(nspec)])
@@ -76,10 +81,6 @@ def main(args, settings = program_settings()):
     files_not_used_compspec = []
 
     alpha_wrong_count = 0
-
-    # Read filename for the output FITS file:
-    if settings.outfile == '':
-        settings.outfile = raw_input('Give the name of the output FITS file: ')
 
     # Do filetype check only once
     filetype = check_filetype(files[0])
@@ -109,6 +110,7 @@ def main(args, settings = program_settings()):
             # and get the E(B-V) values from the dustmap
             print 'filling coordinate arrays from buffer...'
             fill_coordinate_arrays_from_buffer(coordinates, spectra, dustmap, i, buffer)
+#            create_log_arrays(spectra)
         if i % 100 == 0:
             print "Working on spectrum #: ", i
         spectra[i].filename = file
@@ -120,7 +122,8 @@ def main(args, settings = program_settings()):
 
             # Build the median array? Use: flux, continuum, npix,
             # status
-            colors(spectra[i], a)
+            # COLOR function currently not used
+            # colors(spectra[i], a)
             #powerlaw function
             # TODO: check in powerlaw if QSO usable?
             fit_powerlaw(spectra[i])

@@ -43,7 +43,7 @@ except ImportError:
     print 'It seems like dust_extinction_array.pyx was not compiled properly.'
     print 'This is done by typing:'
     print 'python setup.py build_ext --inplace'
-    print 'in the folder of PyS_SDSScompspec.py.'
+    print 'in the folder of PyS_compspec.py.'
     print ''
     if raw_input("Do you wish to compile it now? (y/N) ") == ('y' or 'Y'):
         import os
@@ -100,16 +100,16 @@ def read_spec_fitsio(qso, spec, settings):
     # defining hdu0header is faster than accessing hdu[0].header each time
     hdu0header = hdu[0].read_header()
 
-    spec.plateid = hdu0header['PLATEID']
-    spec.fiberid = hdu0header['FIBERID']
     spec.MJD = hdu0header['MJD']
+    spec.plateid = hdu0header['PLATEID']
+    spec.beginwl = hdu0header['COEFF0']
+    spec.deltawl = hdu0header['COEFF1']
 
     # Coordinates:
     ra = hdu0header['PLUG_RA']
     dec = hdu0header['PLUG_DEC']
     spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
-    spec.beginwl = hdu0header['COEFF0']
-    spec.deltawl = hdu0header['COEFF1']
+    spec.fiberid = hdu0header['FIBERID']
     # Can't find cpix in header, assume it's 1.
     spec.cpix = 1
     # defining hdu1 variable is faster than accessing hdu[1] each time
@@ -641,6 +641,51 @@ def find_element_larger_in_arrays(wave, target_wave, npix):
     return i
 
 
+def find_element_larger_in_arrays_bla(spectra, emfree):
+    # Function which takes in a wavelength array wave and a target wavelength
+    # It searches for the i-th element in wave, which is the first element
+    # bigger than target_wave. 
+    # Note: i is always larger than target_wave! If smaller than target_wave is 
+    # wanted, take returnvalue - 1
+    # TODO: Understand exactly how it works :) and think of a way to catch 
+    # exception 
+#    i = next(x[0] for x in enumerate(wave) if x[1] > target_wave)
+    i = 0
+
+    # use numpy.where, search for array > target_wave
+    # print index?
+    
+    print 'starting to combine arrays...'
+
+    nspec = len(spectra)
+    npix       = np.array([spectra[i].npix for i in xrange(nspec)])
+    length     = np.sort(npix)[0]
+    spectra[i].wave = np.resize(spectra[i].wave, length)
+#    spectra[i].flux = np.resize(spectra[i].flux, length)
+#    spectra[i].flux_error = np.resize(spectra[i].flux_error, length)
+    wave       = np.concatenate([spectra[i].wave for i in xrange(nspec)])
+#    flux       = np.concatenate([spectra[i].flux for i in xrange(nspec)])
+#    flux_error = np.concatenate([spectra[i].flux_error for i in xrange(nspec)])
+    zem        = np.array([spectra[i].z for i in xrange(nspec)])
+
+    target_wave_array = np.array([(1.0 + zem[i])*emfree for i in xrange(nspec)])
+
+    iter_array = np.empty(np.size(spectra))
+
+#    iter_array = wave[wave[:,i] > (1.0 + zem[i])*emfree, i][0]
+#np.where([wave[:,i] > (1.0 + zem[i])*emfree for i in xrange(nspec)])
+    print iter_array
+
+    print 'determine elements larger in arrays...'
+    # while True:
+    #     if iter_array[i] < npix[i] and wave[i,:
+    #         if wave[i,j] < target_wave[j]:
+    #             i += 1
+    #             iter_array[j] += 1
+    #     else:
+    #         break
+    return wave, iter_array, zem, npix
+
 def calc_siqr(flux, nmed):
     # Function which calculates the 68% semi-interquartile range, in the exact same way
     # as done in the C program.
@@ -657,32 +702,182 @@ def calc_siqr(flux, nmed):
     return siqr
 
 
+
+def create_log_arrays(spectra):
+# This function fits the powerlaw to the spectrum, by taking the emission free regions
+# emfree and fits a linear function to log-log flux- wavelength data
+    # define emission free regions
+    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0]])#, [1610,1790]])
+    # we use 4 emission free regions
+    emfree_regions_num = 4#5
+    nspec = len(spectra)
+
+    # create zipped arrays from all spectra
+    wave       = np.array([spectra[i].wave       for i in xrange(nspec)])
+    flux       = np.array([spectra[i].flux       for i in xrange(nspec)])
+    flux_error = np.array([spectra[i].flux_error for i in xrange(nspec)])
+    npix       = np.array([spectra[i].npix       for i in xrange(nspec)])
+
+    # create emtpy lists for the log wavelength, log flux and error data
+    wave_log       = np.empty(emfree_regions_num)
+    flux_log       = np.empty((emfree_regions_num, nspec))
+    flux_error_log = np.empty((emfree_regions_num, nspec))
+#    flux_temp      = np.empty((np.size(spec.flux), nspec))
+#    flux_error_temp= np.zeros(np.size(spec.flux_error))
+#    wave_em_interval_start = np.empty(nspec)
+#    wave_em_interval_end   = np.empty(nspec)
+
+    # create a variable, which counts how many regions contain usable data
+    # only fit a function if all 4 regions are usable
+    emfree_regions_data = 0
+
+    # Initialise spectrum's emfree matrix:
+ #   spec.emfree = np.zeros((3,emfree_regions_num))
+    for i in xrange(emfree_regions_num):
+        # calculate the array containing the emission free regions
+        # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
+        # spec.emfree[0,i] = 0.5*(emfree[i,0] + emfree[i,1])
+        # spec.emfree[1,i] = 0.0
+        # spec.emfree[2,i] = -1.0
+
+        wave_log[i] = log10(0.5*(emfree[i,0] + emfree[i,1]))
+
+
+        # Find the element in the wavelength array, which is larger / smaller 
+        # than the beginning / end of the emission free region
+        wave_em_interval_start = find_element_larger_in_arrays_bla(spectra, emfree[i,0])
+        # the -1 at the end takes into account, that the function always returns the bigger
+        # value.
+        # TODO: Check why siqr not the same as in C code and median neither. (slight abbreviations)
+        # NOTE: Although the C program states to only use the element in the wavelength array that 
+        # is the last element smaller than (1+spec.z)*emfree[i,1], it uses the next one. Thus, for
+        # now, we neglect the - 1
+        wave_em_interval_end = find_element_larger_in_arrays(spec.wave, (1.0 + spec.z)*emfree[i,1], spec.npix)# - 1
+        # define number of elements
+        # nmed is the number of usable pixels in the flux array. It is given by the number of pixels
+        # in the interval of wave_em_interval_start to end with a flux error value bigger than 0
+        nmed = 0
+        for k in xrange(wave_em_interval_start, wave_em_interval_end):
+            # if there is a non-vanishing error for the pixel, it means that
+            # the pixel is good to use. Save all those flux elements for calc
+            # of median in temporary flux array and count number of pixels, nmed
+            if spec.flux_error[k] > 0:
+                flux_temp[nmed]       = spec.flux[k]
+#                flux_error_temp[nmed] = spec.flux_error[k]
+                nmed += 1
+
+        # Calculation of semi-interquartile using built in numpy functions. I can't manage to get the
+        # same results as the C program by using them, so I implemented my own function
+        # The reason is probably how the elements are chosen. 
+        # in numpu 1.8 we can't choose different interpolations. Possible from 1.9
+        # percentile84 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 84)
+        # percentile16 = np.percentile(spec.flux[wave_em_interval_start:wave_em_interval_end], 16)
+        # siqr = (percentile84 - percentile16)/2.0
+        
+        if nmed > 0:
+            if i < 4:
+                # median probably can work on several arrays at once?
+                median = np.median(flux_temp[0:nmed])
+                # siqr.. have to use this one, run it over all arrays one after one
+                siqr = calc_siqr(flux_temp[0:nmed], nmed)
+        
+                spec.emfree[1,i] = median
+                spec.emfree[2,i] = siqr/np.sqrt(nmed)
+                # if usable values, append emfree regions to log data arrays
+                if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
+                    wave_log[i] = np.log10(spec.emfree[0,i])
+                    flux_log[i] = np.log10(spec.emfree[1,i])
+                    flux_error_log[i] = np.log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
+                    # count region as usable
+                    emfree_regions_data += 1
+            # elif i == 4:
+            #     k = 0
+            #     wave_log_val = flux_log_val = flux_error_log_val = []
+            #     while flux_temp[k] != 0:
+            #         wave_log_val.append(np.log10(spec.wave[wave_em_interval_start+k]/(spec.z+1.0)))
+            #         flux_log_val.append(np.log10(flux_temp[k]))
+            #         flux_error_log_val.append(np.log10(spec.flux_error[k]))
+            #         np.vstack((wave_log, wave_log_val))
+            #         np.vstack((flux_log, flux_log_val))
+            #         np.vstack((flux_error_log, flux_error_log_val))
+            #         k += 1
+    
+    # Fit a linear function to the log data:
+    # define our (line) fitting function
+    # using linfit we don't need our linear fitting function
+    # Linfit gives same results as optimize.curve now! 
+    # def func(x, a, b):
+    #    return a*x + b
+#    only continue, if 4 regions contain usable data
+    if emfree_regions_data == 4:# >= 4:
+        # fit linear function func to out log arrays
+        # coeff: fitting parameters
+        # pcov: covariance matrix, used to retrieve error for alpha.
+#        coeff, pcov = optimize.curve_fit(func, wave_log, flux_log, p0=(-2,5), sigma=flux_error_log)
+
+        coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
+        
+#        print wave_log, flux_log
+        
+        # assign coefficients to our spectrum
+        spec.beta = coeff[0]
+        spec.alpha = -spec.beta - 2
+        spec.delta = coeff[1]
+        spec.chisq = redchisq
+        try:
+            # C program seems to take variance as error. Normally would take sqrt of pcov.
+            spec.alpha_error = float(pcov[0,0])
+        except TypeError:
+            print "Fitting problem"
+
+#        print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
+        # use the fitted coefficients to calculate the powerlaw continuum
+        spec.powerlaw = 10.0**(coeff[1] + coeff[0]*np.log10(spec.wave))
+
+    # if we don't have 4 usable regions, set everything to 0
+    else:
+        # Currently leave those values at -999. Seems to be same as in C code then.
+        # spec.beta = 0
+        # spec.alpha = 0
+        # spec.delta = 0
+        # spec.alpha_error = 0
+        spec.powerlaw = np.zeros(spec.npix)
+        # Think about if 0 is a good value (currently checked in build_compspec)
+
+    del(spec.emfree)
+    del(flux_temp)
+    # TODO: values differ slightly from c program!
+    # Fixed by implementing own siqr function. fixed again, alpha this time
+
+
+#TODO: check influence of np.zeros in code!
 def fit_powerlaw(spec):
 # This function fits the powerlaw to the spectrum, by taking the emission free regions
 # emfree and fits a linear function to log-log flux- wavelength data
     emfree = []
     # define emission free regions
-    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0]])
+    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0]])#, [1610,1790]])
     # we use 4 emission free regions
-    emfree_regions_num = 4
+    emfree_regions_num = 4#5
     # create emtpy lists for the log wavelength, log flux and error data
-    # TODO: think if lists should be numpy arrays instead!
     wave_log       = np.zeros(emfree_regions_num)
     flux_log       = np.zeros(emfree_regions_num)
     flux_error_log = np.zeros(emfree_regions_num)
     flux_temp      = np.zeros(np.size(spec.flux))
+#    flux_error_temp= np.zeros(np.size(spec.flux_error))
 
     # set standard values for alpha, alpha_error, beta and delta
     spec.alpha       = -999
     spec.alpha_error = -999
     spec.beta        = -999
     spec.delta       = -999
+    spec.chisq       = -999
     # create a variable, which counts how many regions contain usable data
     # only fit a function if all 4 regions are usable
     emfree_regions_data = 0
 
     # Initialise spectrum's emfree matrix:
-    spec.emfree = np.zeros((3,4))
+    spec.emfree = np.zeros((3,emfree_regions_num))
     for i in xrange(emfree_regions_num):
         # calculate the array containing the emission free regions
         # TODO: take spec.emfree calculations out of for loop. Probably hardly speed difference
@@ -713,7 +908,8 @@ def fit_powerlaw(spec):
             # the pixel is good to use. Save all those flux elements for calc
             # of median in temporary flux array and count number of pixels, nmed
             if spec.flux_error[k] > 0:
-                flux_temp[nmed] = spec.flux[k]
+                flux_temp[nmed]       = spec.flux[k]
+#                flux_error_temp[nmed] = spec.flux_error[k]
                 nmed += 1
 
         # Calculation of semi-interquartile using built in numpy functions. I can't manage to get the
@@ -725,18 +921,30 @@ def fit_powerlaw(spec):
         # siqr = (percentile84 - percentile16)/2.0
         
         if nmed > 0:
-            median = np.median(flux_temp[0:nmed])
-            siqr = calc_siqr(flux_temp[0:nmed], nmed)
-    
-            spec.emfree[1,i] = median
-            spec.emfree[2,i] = siqr/np.sqrt(nmed)
-            # if usable values, append emfree regions to log data arrays
-            if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
-                wave_log[i] = log10(spec.emfree[0,i])
-                flux_log[i] = log10(spec.emfree[1,i])
-                flux_error_log[i] = log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
-                # count region as usable
-                emfree_regions_data += 1
+            if i < 5:
+                median = np.median(flux_temp[0:nmed])
+                siqr = calc_siqr(flux_temp[0:nmed], nmed)
+        
+                spec.emfree[1,i] = median
+                spec.emfree[2,i] = siqr/np.sqrt(nmed)
+                # if usable values, append emfree regions to log data arrays
+                if spec.emfree[1,i] > 0 and spec.emfree[2,i] > 0:
+                    wave_log[i] = np.log10(spec.emfree[0,i])
+                    flux_log[i] = np.log10(spec.emfree[1,i])
+                    flux_error_log[i] = np.log10(1.0 + spec.emfree[2,i]/spec.emfree[1,i])
+                    # count region as usable
+                    emfree_regions_data += 1
+            # elif i == 4:
+            #     k = 0
+            #     wave_log_val = flux_log_val = flux_error_log_val = []
+            #     while flux_temp[k] != 0:
+            #         wave_log_val.append(np.log10(spec.wave[wave_em_interval_start+k]/(spec.z+1.0)))
+            #         flux_log_val.append(np.log10(flux_temp[k]))
+            #         flux_error_log_val.append(np.log10(spec.flux_error[k]))
+            #         np.vstack((wave_log, wave_log_val))
+            #         np.vstack((flux_log, flux_log_val))
+            #         np.vstack((flux_error_log, flux_error_log_val))
+            #         k += 1
     
     # Fit a linear function to the log data:
     # define our (line) fitting function
@@ -745,7 +953,7 @@ def fit_powerlaw(spec):
     # def func(x, a, b):
     #    return a*x + b
 #    only continue, if 4 regions contain usable data
-    if emfree_regions_data == 4:
+    if emfree_regions_data == emfree_regions_num:# >= 4:
         # fit linear function func to out log arrays
         # coeff: fitting parameters
         # pcov: covariance matrix, used to retrieve error for alpha.
@@ -759,6 +967,7 @@ def fit_powerlaw(spec):
         spec.beta = coeff[0]
         spec.alpha = -spec.beta - 2
         spec.delta = coeff[1]
+        spec.chisq = redchisq
         try:
             # C program seems to take variance as error. Normally would take sqrt of pcov.
             spec.alpha_error = float(pcov[0,0])
@@ -767,7 +976,7 @@ def fit_powerlaw(spec):
 
 #        print "alpha, delta: ", spec.alpha, spec.delta, spec.alpha_error
         # use the fitted coefficients to calculate the powerlaw continuum
-        spec.powerlaw = 10.0**(coeff[1] + coeff[0]*log10(spec.wave))
+        spec.powerlaw = 10.0**(coeff[1] + coeff[0]*np.log10(spec.wave))
 
     # if we don't have 4 usable regions, set everything to 0
     else:
@@ -957,14 +1166,14 @@ def build_fits_file(cspec, spec, outfile, settings):
     prihdr['ARRAY0']  = ('DA', '1 - Flux / Flux_count')
     prihdr['ARRAY1']  = ('ERR', '1 Sigma')
     prihdr['ARRAY2']  = ('NPOINTS', 'Number of contributing pixels')
-    prihdr['NSPECTRA']= (cspec.spectra_count, 'Total number of contributing QSOs')
-    prihdr['NSPEC']   = (nspec, 'Total number of contributing QSOs')
+    prihdr['NSPECTRA']= (cspec.spectra_count, 'Total number of used / contributing QSOs')
+    prihdr['NSPEC']   = (nspec, 'Total number of QSOs considered')
     prihdr['VACUUM']  = (1, 'Wavelengths are in vacuum')
     prihdr['DC_FLAG'] = (1, 'Log-Linear Flag')
     prihdr['CRPIX1']  = (1, 'Starting pixel (1-indexed)')
-    prihdr['COEFF0']  = log10(cspec.wave[sidx])
+    prihdr['COEFF0']  = np.log10(cspec.wave[sidx])
     prihdr['COEFF1']  = coeff1
-    prihdr['CRVAL1']  = log10(cspec.wave[sidx])
+    prihdr['CRVAL1']  = np.log10(cspec.wave[sidx])
     prihdr['CD1_1']   = coeff1
     prihdr['DR']      = (10, 'SDSS Data release used')
 
@@ -995,7 +1204,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     # 1 - average transmittance
     np.seterr(all='raise')
     print 'applying metal correction'
-    zem = 10**(np.log10(cspec.wave[sidx]) + coeff1*np.arange(npix)) / 1215.67 - 1
+    zem = 10**(np.log10(cspec.wave[sidx]) + coeff1*np.arange(npix)) / 1215.6701 - 1
     # TODO: change len(hdu0_row1) to npix? 
     for i in xrange(len(hdu0_row1)):
         try:
@@ -1028,6 +1237,7 @@ def build_fits_file(cspec, spec, outfile, settings):
     fiber_array       = np.zeros(nspec)
     alpha_array       = np.zeros(nspec)
     alpha_error_array = np.zeros(nspec)
+    chisq_array       = np.zeros(nspec)
     ra_array          = np.zeros(nspec)
     dec_array         = np.zeros(nspec)
     l_array           = np.zeros(nspec)
@@ -1042,6 +1252,7 @@ def build_fits_file(cspec, spec, outfile, settings):
         fiber_array[i]       = spec[i].fiberid
         alpha_array[i]       = spec[i].alpha
         alpha_error_array[i] = spec[i].alpha_error
+        chisq_array[i]       = spec[i].chisq
         ra_array[i]          = spec[i].coordinates.ra.degree
         dec_array[i]         = spec[i].coordinates.dec.degree
 #        l_array[i]           = spec[i].coordinates.galactic.l.degree
@@ -1080,6 +1291,7 @@ def build_fits_file(cspec, spec, outfile, settings):
                       fits.Column(name='DEC',    format='D', array=dec_array),
                       fits.Column(name='ALPHA',  format='D', array=alpha_array),
                       fits.Column(name='EALPHA', format='D', array=alpha_error_array),
+                      fits.Column(name='ChiSq',  format='D', array=chisq_array),
                       fits.Column(name='l',      format='D', array=l_array),
                       fits.Column(name='b',      format='D', array=b_array),
                       fits.Column(name='ZEM',    format='D', array=zem_array),
@@ -1090,7 +1302,7 @@ def build_fits_file(cspec, spec, outfile, settings):
 
     # Now write new keywords to Table header
     table_header = TableHDU.header
-    table_header['NSPEC']  = (len(spec), 'Total number of Quasars')
+    table_header['NSPEC']  = (nspec, 'Total number of Quasars')
     table_header['MEAN_A'] = (cspec.mean_a, 'Mean spectral index')
     table_header['SIGMA_A']= (cspec.sigma_a, 'Standard deviation on alpha')
     table_header['MED_A']  = (cspec.median_a, 'Median spectral index')
