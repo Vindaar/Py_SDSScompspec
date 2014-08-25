@@ -126,7 +126,8 @@ def main(args, settings = program_settings()):
             # colors(spectra[i], a)
             #powerlaw function
             # TODO: check in powerlaw if QSO usable?
-            fit_powerlaw(spectra[i])
+#            fit_powerlaw(spectra[i], 0)
+            fit_powerlaw_individual(spectra[i], 0)
             # alpha cut
             if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
                 # calculate comp spec

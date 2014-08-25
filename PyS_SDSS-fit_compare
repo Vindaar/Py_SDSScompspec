@@ -1,0 +1,152 @@
+#!/usr/bin/env python
+
+# This program plots the spectrum of a FITS file, fits the continuum
+# using two different 
+
+
+from copy import deepcopy
+import sys
+from SDSSmodules import *
+from SDSSclasses import spectrum
+import numpy as np
+#from astropy.io import FITS
+import fitsio
+from pylab import *
+from matplotlib.backend_bases import Event
+from matplotlib import pyplot as plt
+
+
+class WorkOnSpectrum:
+    def __init__(self, filelist, figure, ax, filetype, dustmap):
+        self.filelist = filelist
+        self.filetype = filetype
+        self.fig      = figure
+        self.axarr    = ax
+        self.dustmap  = dustmap
+        self.nspec    = len(filelist)
+        self.i        = 0
+    
+    def connect(self):
+        self.cidpress = self.fig.canvas.mpl_connect('key_press_event', self.press)
+        self.work_on_spectrum(self.filelist[self.i])
+
+    def press(self, event):
+        c = event.key
+        sys.stdout.flush()
+        if c == 'n':
+            print ''
+            print 'keypress read:', c
+            print 'going to next spectrum #', self.i
+            if self.i < self.nspec:
+                self.i += 1
+                self.work_on_spectrum(self.filelist[self.i])
+            else:
+                plt.close()
+                print 'reached last spectrum in file'
+                self.disconnect()
+        elif c == 'b':
+            print ''
+            print 'keypress read:', c
+            print 'going to last spectrum'
+            if self.i > 0:
+                self.i -= 1
+                print self.i
+                self.work_on_spectrum(self.filelist[self.i])
+            else:
+                self.work_on_spectrum(self.filelist[self.i])
+        elif c == 'q':
+            print ''
+            print c, 'was pressed. Exit program.'
+            plt.close()
+            self.disconnect()
+        else:
+            print ''
+            print 'neither n nor b was pressed. Display same spectrum again'
+            self.work_on_spectrum(self.filelist[self.i])
+
+    def work_on_spectrum(self, filename):
+        # create spectrum object and determine properties of spectrum
+        spec = spectrum()
+        if self.filetype == 1:
+            read_spSpec_fitsio(self.filelist[self.i].rstrip(), spec, None)
+        if self.filetype == 2:
+            read_spec_fitsio(self.filelist[self.i].rstrip(), spec, None)
+        # dust correction related properties
+        spec.Ebv = obstools.get_SFD_dust(spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg, self.dustmap, interpolate=0)
+        spec.filename = filename
+        Gal_extinction_correction(spec)
+        # perform the fit. 1st with medians 2nd with individual points
+                
+        spec_median = deepcopy(spec)
+                
+        x_ind, y_ind, y_err_ind = fit_powerlaw_individual(spec, 1)
+        x_med, y_med, y_err_med = fit_powerlaw(spec_median, 1)
+        
+        # clear plot from before
+        self.axarr.clear()
+        self.axarr.set_xlabel('Wavelength / Angstrom')
+        self.axarr.set_ylabel('Flux')
+
+
+        # plot spectrum
+        self.axarr.plot(spec.wave, spec.flux, 'r-')
+        # plot spectrum error
+        self.axarr.plot(spec.wave, spec.flux_error, 'b-')
+        # plot fit_powerlaw_individual
+        self.axarr.plot(spec.wave, spec.powerlaw,'m-', linewidth=2.5)
+        # plot fit_powerlaw
+        self.axarr.plot(spec.wave, spec_median.powerlaw, 'g-', linewidth=2.5)
+        # plot fit_powerlaw_ind data
+        self.axarr.errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='o', linestyle='None')
+        # plot fit_powerlaw
+        self.axarr.errorbar(10**(x_med), 10**(y_med), xerr=0, yerr=10**(y_med)*y_err_med, elinewidth=2.5, fmt='k', markersize=8, marker='s', linestyle='None')
+        # set title
+        filename   = str(spec.filename) + '    '
+        zem_str    = 'zem: ' + "{0:.5f}".format(spec.z) + '\n'
+        individual = 'alpha_ind: ' + "{0:.5f}".format(spec.alpha) + '    ' + 'chisq_ind: ' + "{0:.5f}".format(spec.chisq) + '\n'
+        median     = 'alpha_med: ' + "{0:.5f}".format(spec_median.alpha) + '    ' + 'chisq_med: ' + "{0:.5f}".format(spec_median.chisq)
+        title = filename + zem_str + individual + median
+
+        self.axarr.set_title(title)
+        self.axarr.set_xlim(3600, 10000)
+        # show plot
+
+        plt.draw()
+
+    def disconnect(self):
+        self.fig.canvas.mpl_disconnect(self.cidpress)
+
+
+def main(args):
+
+    if len(args) > 0:
+        filelist = open(args[0], 'r').readlines()
+
+    # determine if it's a DR7 or DR10 file
+    filetype = check_filetype(filelist[0])
+
+    dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+
+    print 'This program plots the spectra from a list of FITS files'
+    print 'Red:   spectrum'
+    print 'Blue:  error of spectrum'
+    print 'Pink:  fit_powerlaw_individual (based on individual pixels in intervals'
+    print 'Green: fit_powerlaw            (based on medians in intervals)'
+    print 'Cyan:  data points used for fit_powerlaw_individual'
+    print 'Black: data points used for fit_powerlaw'
+    print ''
+    print 'press n to dispaly the next spectrum'
+    print 'press b to display the last spectrum'
+
+
+    # number of files in the list
+    file_num = len(filelist)
+    fig, axarr = plt.subplots(1, sharex=True, figsize=(10,8), dpi=100)
+    spectra = WorkOnSpectrum(filelist, fig, axarr, filetype, dustmap)
+    spectra.connect()
+    plt.show()
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])
+
