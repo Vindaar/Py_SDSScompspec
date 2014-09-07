@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
 # This program plots the spectrum of a FITS file, fits the continuum
-# using two different 
-
+# using two different fitting algorithms
+# 1: using medians of fitting intervals
+# 2: using all data points
 
 from copy import deepcopy
 import sys
@@ -16,8 +17,9 @@ from matplotlib.backend_bases import Event
 from matplotlib import pyplot as plt
 
 
+# class which contains all necessary functions to work on the matplotlib graph
 class WorkOnSpectrum:
-    def __init__(self, filelist, figure, ax, filetype, dustmap):
+    def __init__(self, filelist, figure, ax, filetype, dustmap, settings):
         self.filelist = filelist
         self.filetype = filetype
         self.fig      = figure
@@ -25,6 +27,7 @@ class WorkOnSpectrum:
         self.dustmap  = dustmap
         self.nspec    = len(filelist)
         self.i        = 0
+        self.settings = settings
     
     def connect(self):
         self.cidpress = self.fig.canvas.mpl_connect('key_press_event', self.press)
@@ -67,6 +70,8 @@ class WorkOnSpectrum:
     def work_on_spectrum(self, filename):
         # create spectrum object and determine properties of spectrum
         spec = spectrum()
+        z_min = self.settings.z_min
+        z_delta = self.settings.z_delta
         if self.filetype == 1:
             read_spSpec_fitsio(self.filelist[self.i].rstrip(), spec, None)
         if self.filetype == 2:
@@ -78,11 +83,21 @@ class WorkOnSpectrum:
         # perform the fit. 1st with medians 2nd with individual points
                 
         spec_median = deepcopy(spec)
-                
-        x_ind, y_ind, y_err_ind = fit_powerlaw_individual(spec, 1)
+
+        emfree = np.array([1280.0,1312.0,1345.0,1440.0,1610])
+        emfree_end = np.array([1292.0,1328.0,1365.0,1475.0,1790])
+        spec.emfree = (1.0 + spec.z)*emfree
+        spec.emfree_end = (1.0 + spec.z)*emfree_end
+        print spec.emfree
+        
+        zem_index = calc_zem_index(spec.z, z_min, z_delta)
+        print 'zem_index:', zem_index
+        if zem_index == -1:
+            zem_index = 0
+        x_ind, y_ind, y_err_ind = fit_powerlaw_individual(spec, self.settings, 1, zem_index = zem_index)
         x_med, y_med, y_err_med = fit_powerlaw(spec_median, 1)
         
-        # clear plot from before
+        # clear plot from before and write labels
         self.axarr.clear()
         self.axarr.set_xlabel('Wavelength / Angstrom')
         self.axarr.set_ylabel('Flux')
@@ -97,12 +112,17 @@ class WorkOnSpectrum:
         # plot fit_powerlaw
         self.axarr.plot(spec.wave, spec_median.powerlaw, 'g-', linewidth=2.5)
         # plot fit_powerlaw_ind data
-        self.axarr.errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='o', linestyle='None')
+
+        for i in xrange(np.size(emfree)):
+            self.axarr.axvline(spec.emfree[i], ymin=0, ymax=1, linewidth=1, color='c')
+        for i in xrange(np.size(emfree_end)):
+            self.axarr.axvline(spec.emfree_end[i], ymin=0, ymax=1, linewidth=1, color='orange')
+#        self.axarr.errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='o', linestyle='None')
         # plot fit_powerlaw
-        self.axarr.errorbar(10**(x_med), 10**(y_med), xerr=0, yerr=10**(y_med)*y_err_med, elinewidth=2.5, fmt='k', markersize=8, marker='s', linestyle='None')
+        self.axarr.errorbar(10**(x_med), 10**(y_med), xerr=0, yerr=10**(y_med)*y_err_med, elinewidth=2.5, fmt='k', markersize=3, marker='x', linestyle='None')
         # set title
         filename   = str(spec.filename) + '    '
-        zem_str    = 'zem: ' + "{0:.5f}".format(spec.z) + '\n'
+        zem_str    = 'zem: ' + "{0:.5f}".format(float(spec.z)) + '\n'
         individual = 'alpha_ind: ' + "{0:.5f}".format(spec.alpha) + '    ' + 'chisq_ind: ' + "{0:.5f}".format(spec.chisq) + '\n'
         median     = 'alpha_med: ' + "{0:.5f}".format(spec_median.alpha) + '    ' + 'chisq_med: ' + "{0:.5f}".format(spec_median.chisq)
         title = filename + zem_str + individual + median
@@ -141,8 +161,10 @@ def main(args):
 
     # number of files in the list
     file_num = len(filelist)
+    settings = program_settings()
     fig, axarr = plt.subplots(1, sharex=True, figsize=(10,8), dpi=100)
-    spectra = WorkOnSpectrum(filelist, fig, axarr, filetype, dustmap)
+    # create WorkOnSpectrum object
+    spectra = WorkOnSpectrum(filelist, fig, axarr, filetype, dustmap, settings)
     spectra.connect()
     plt.show()
 

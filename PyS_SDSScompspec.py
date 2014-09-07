@@ -27,18 +27,11 @@ from SDSSclasses import *
 ############################### RUN THE PROGRAM #####################################
 #####################################################################################
 
-# TODO: put argcheck outside of function into SDSSmodule so that I don't have to do
-# it for both programs.
-
 def main(args, settings = program_settings()):
     # Create settings object, which store flags, which are set on program start
 #    settings = program_settings()
     # this way the settings argument should be optional. If we provide it in PyS_SDSScoordinates
     # it should not be necessary here.
-
-    #TODO: IF we supply settings object. Then maybe check if we give input file
-    # IF we do that, simply bypass all args checks, since the assume that everything
-    # is already given in settings object.
 
     # Read in filename and settings from command line
     print 'Checking command line arguments'
@@ -58,7 +51,8 @@ def main(args, settings = program_settings()):
 
     print 'creating array of spectrum objects'
     nspec = len(files)
-    spectra = np.array([spectrum() for i in xrange(nspec)])
+#    spectra = np.array([spectrum() for i in xrange(nspec)])
+    spectra = [spectrum() for i in xrange(nspec)]
     print 'creating object storing coordinate arrays'
     coordinates = coordinate_arrays(nspec)
 
@@ -70,6 +64,10 @@ def main(args, settings = program_settings()):
     alpha_top = 1.5
     alpha_low = -2
     spectra_count = 0
+    z_min     = settings.z_min
+    z_max     = settings.z_max
+    z_delta   = settings.z_delta
+
     # memory analysis:
 
     files_used_file = open('files_used', 'w')
@@ -119,15 +117,19 @@ def main(args, settings = program_settings()):
             # Dust corrections. Only done, if --dust flag is set on startup
             if settings.dust == 1:
                 Gal_extinction_correction(spectra[i])
-
             # Build the median array? Use: flux, continuum, npix,
             # status
             # COLOR function currently not used
             # colors(spectra[i], a)
             #powerlaw function
             # TODO: check in powerlaw if QSO usable?
-#            fit_powerlaw(spectra[i], 0)
-            fit_powerlaw_individual(spectra[i], 0)
+            # fit_powerlaw(spectra[i], 0)
+            zem_index = calc_zem_index(spectra[i].z, z_min, z_delta)
+            fit_powerlaw_individual(spectra[i], settings, return_data=0, zem_index = zem_index)
+            if spectra[i].alpha == -999:
+                print 'fitting failed!'
+                print i, spectra[i].alpha, spectra[i].z
+#            spectra[i].powerlaw = spectra[i].model_sdss
             # alpha cut
             if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
                 # calculate comp spec
@@ -148,7 +150,12 @@ def main(args, settings = program_settings()):
         else:
             files_not_used_zem.append(file)
             # flag spectrum as not used, because of redshift
-            spectra[i].flag = 1
+            if spectra[i].z == 999:
+                # means it has bad redshift
+                print 'ha?'
+                spectra[i].flag == 11
+            else:
+                spectra[i].flag = 1
         # Every 50th loop, we free all objects, which are not used anymore. 
         # This function is called automatically, but not often enough. Reduces
         # memory usage quite a lot.

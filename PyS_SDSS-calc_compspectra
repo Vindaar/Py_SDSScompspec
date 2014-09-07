@@ -1,0 +1,235 @@
+#!/usr/bin/env python
+
+import sys
+from SDSSmodules import *
+from SDSSclasses import spectrum
+import numpy as np
+#from astropy.io import FITS
+import fitsio
+from pylab import *
+#from matplotlib.backend_bases import Event
+from matplotlib import pyplot as plt
+import gc
+
+def perform_fitting(cspectra, settings):
+    # perform fitting
+    print 'cspectra output'
+    for cspec in cspectra:
+        print np.shape(cspec.wave), np.shape(cspec.sum), cspec.spectra_count
+        print cspec.min_z_in_bin, cspec.max_z_in_bin
+        cspec.sum = np.asarray(cspec.sum)
+        if cspec.sum.any() > 0:
+            cspec.flux = cspec.sum
+        else:
+            cspec.flux = np.zeros(cspec.npix)
+        cspec.npix = np.size(cspec.flux)
+        cspec.flux_error = cspec.sum2
+        cspec.z   = 0
+        fit_powerlaw_individual(cspec, settings, zem_index = cspec.zem_index)
+        cspec.normalized = cspec.flux / cspec.powerlaw
+
+
+def perform_plotting(cspectra, settings):
+    # plot spectrum
+    fig, axarr = plt.subplots(2, sharex=True, figsize=(10,8), dpi=100)
+
+    axarr[0].set_xlabel('Wavelength / Angstrom')
+    axarr[0].set_ylabel('Flux')
+
+    axarr[0].plot(cspectra[0].wave, cspectra[0].normalized, 'r')
+    axarr[0].plot(cspectra[1].wave, cspectra[1].normalized, 'b')
+    axarr[0].plot(cspectra[2].wave, cspectra[2].normalized, 'g')
+    axarr[0].plot(cspectra[3].wave, cspectra[3].normalized, 'c')
+    axarr[0].plot(cspectra[4].wave, cspectra[4].normalized, 'k')
+    axarr[0].plot(cspectra[5].wave, cspectra[5].normalized, 'orange')
+    # axarr[0].plot(cspectra[6].wave, cspectra[6].normalized, 'm')
+    # axarr[0].plot(cspectra[7].wave, cspectra[7].normalized, 'y')
+    # axarr[0].plot(cspectra[8].wave, cspectra[8].normalized, 'grey')
+
+    axarr[1].plot(cspectra[0].wave, cspectra[0].sum, 'r')
+    axarr[1].plot(cspectra[1].wave, cspectra[1].sum, 'b')
+    axarr[1].plot(cspectra[2].wave, cspectra[2].sum, 'g')
+    axarr[1].plot(cspectra[3].wave, cspectra[3].sum, 'c')
+    axarr[1].plot(cspectra[4].wave, cspectra[4].sum, 'k')
+    axarr[1].plot(cspectra[5].wave, cspectra[5].sum, 'orange')
+    axarr[1].plot(cspectra[6].wave, cspectra[6].sum, 'm')
+    axarr[1].plot(cspectra[7].wave, cspectra[7].sum, 'y')
+    axarr[1].plot(cspectra[8].wave, cspectra[8].sum, 'grey')
+
+
+    plt.show()
+
+def main(args):
+    
+    files = open(args[0], 'r').readlines()
+    nspec = np.size(files)
+    settings = program_settings()
+    settings.program_name = 'PyS_SDSS-calc_compspectra'
+
+    z_max   = settings.z_max
+    z_min   = settings.z_min
+    z_delta = settings.z_delta
+    z_bins  = settings.z_bins
+
+    print 'initialize compspectra'
+    cspectra = [composite_spectrum(5763, i) for i in xrange(z_bins)]
+
+    filetype = check_filetype(files[0])
+
+    print 'redefine wavelength array of compspectra'
+    for cspec in cspectra:
+        # np.log10(900) == 2.9542... Need 4 digits to compare later!
+        cspec.wave = 10**(2.9542 + 0.0001*np.arange(5763))
+
+    print 'initialize spectra'
+    spectra = [spectrum() for i in xrange(nspec)]
+    coordinates = coordinate_arrays(nspec)    
+    dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+    outfile = 'saved_compspectra.fits'
+
+    for i, file in enumerate(files):
+        if i % 5000 == 0:
+            # this buffer is used to read a bunch of fits files after another,
+            # because that way the reading is much faster. Needs more memory
+            # of course.
+            if i+5000 < len(files):
+                buffer = 5000
+            else:
+                buffer = len(files) - i
+            for j in xrange(buffer):
+                if j % 100 == 0:
+                    print "Reading spectrum #: ", j
+                if filetype == 1:
+                    # If the return value is one, we do a check on coordinates and this 
+                    # object is outside the wanted boundaries. Therefore neglect and continue
+                    if read_spSpec_fitsio(files[i+j], spectra[i+j], settings) == 1:
+                        continue
+                if filetype == 2:
+                    if read_spec_fitsio(files[i+j], spectra[i+j], settings) == 1:
+                        continue
+            # Fill the l and b arrays with the coordinates of the buffer
+            # and get the E(B-V) values from the dustmap
+            print 'filling coordinate arrays from buffer...'
+            fill_coordinate_arrays_from_buffer(coordinates, spectra, dustmap, i, buffer)
+#            create_log_arrays(spectra)
+        if i % 100 == 0:
+            print "Working on spectrum #: ", i
+        spec  = spectra[i]
+        spec.filename = file
+
+        # determine bin index for cspectra
+        zem_index = calc_zem_index(spec.z, z_min, z_delta)
+        # Conditions on the QSOs:
+        if zem_index > 0 or zem_index == 0:
+            cspec = cspectra[zem_index]
+
+            cspec.spectra_count += 1
+            #z_max_in_bin:
+            cspec.zem_in_bin.append(spec.z)
+
+            # Dust corrections. Only done, if --dust flag is set on startup
+            Gal_extinction_correction(spec)
+
+            spec.rest_wave = np.zeros(5763)
+            np.put(spec.rest_wave, np.arange(np.size(spec.wave)), spec.wave / (spec.z + 1.0))
+            #print spec.rest_wave
+            #print cspec.wave
+
+            iterator  = int(find_element_larger_in_arrays(spec.rest_wave, cspec.wave[0], spec.npix))
+            if spec.rest_wave[iterator] > cspec.wave[0] and iterator > 0:
+                iterator -= 1
+            citerator = int(find_element_larger_in_arrays(cspec.wave, spec.rest_wave[0], spec.npix))
+
+            #index = np.where((spec.rest_wave) & (spec.flux_error > 0))[0]
+            #index = np.where(np.logical_and(spec.flux > 0, spec.flux_error > 0, np.isposinf(spec.flux_error) == False))[0]
+
+            #index = np.where(index < 5763)[0]
+
+            # need to be careful which elements to take. Have to make sure no NULL etc values there!
+        
+
+            #index = np.where(spec.rest_wave)[0]
+            # TEST
+            index = np.where((spec.flux > 0)                         &
+                             (spec.flux_error > 0)                   &
+                             (np.isposinf(spec.flux_error) == False) &
+                             (np.isnan(spec.flux_error) == False))[0]
+
+            indices_for_cspec = np.subtract(index, iterator)
+            indices_for_cspec = np.add(indices_for_cspec, citerator)#np.arange(citerator, spec.npix - iterator)
+            indices_for_spec  = index#np.add(index, iterator)
+            a1 = np.size(indices_for_spec)
+            a2 = np.size(indices_for_cspec)
+            indices_for_cspec = indices_for_cspec[np.where(indices_for_cspec < 5763)[0]]
+            indices_for_spec = indices_for_spec[np.where(indices_for_spec < 5763)[0]]
+            a3 = np.size(indices_for_spec)
+            a4 = np.size(indices_for_cspec)            
+            if a1 - a3 > 0 or a2 - a4 > 0:
+                print a1 - a3
+                print a2 - a4
+                print i
+                print a1, a2, a3, a4
+            
+
+
+            temp_sum   = np.zeros(5763)
+            temp_sum2  = np.zeros(5763)
+            np.put(temp_sum,   indices_for_cspec, spec.flux[indices_for_spec])
+            np.put(temp_sum2,  indices_for_cspec, spec.flux_error[indices_for_spec])
+
+            cspec.sum   = np.add(cspec.sum,   temp_sum)
+            cspec.sum2  = np.add(cspec.sum2,  temp_sum2)
+    
+#            indices = np.in1d(cspec.wave, spec.rest_wave)
+#            print np.where(indices == True)
+
+            # at the moment, we don't normalize the spectra. Thus, we take the arithmetic mean!
+            # if we normalize spectra before creating compspectra, we have to take geometric mean
+#             sum_temp = np.zeros(5763)
+#             cspec.sum = np.zeros(5763)
+# #            print indices
+#             np.put(sum_temp, indices, spec.rest_wave)
+#             np.add(cspectra[zem_index].sum, sum_temp)
+            
+#            fit_powerlaw_individual(spectra[i], 0)
+#            spectra[i].powerlaw = spectra[i].model_sdss
+            # alpha cut
+        # Every 50th loop, we free all objects, which are not used anymore. 
+        # This function is called automatically, but not often enough. Reduces
+        # memory usage quite a lot.
+        if i % 500 == 0:
+            gc.collect()
+        # Free all big arrays, which won't be needed anymore, after this loop. 
+        # Unecessary memory usage.
+        del(spectra[i].flux)
+        del(spectra[i].flux_error)
+        del(spectra[i].wave)
+        del(spectra[i].powerlaw)
+        del(spectra[i].status)
+        del(spectra[i].snr)
+        # increase loop variable, since we run over files and not an integer
+        i += 1
+        
+
+    # caclulate min and max zem of contributing quasars
+    for cspec in cspectra:
+        if cspec.spectra_count > 0:
+            print np.shape(cspec.sum)
+            print np.shape(cspec.spectra_count), cspec.spectra_count
+            cspec.sum = cspec.sum / cspec.spectra_count
+            bin = cspec.zem_in_bin
+            bin = np.sort(bin)
+            cspec.max_z_in_bin = bin[0]
+            cspec.min_z_in_bin = bin[np.nonzero(bin)][-1]
+        else:
+            cspec.max_z_in_bin = 0
+            cspec.min_z_in_bin = 0
+  
+    perform_fitting(cspectra, settings)
+    write_compspectra_to_file(cspectra, settings, outfile)
+    perform_plotting(cspectra, settings)
+
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])

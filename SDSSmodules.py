@@ -37,13 +37,14 @@ import fitsio
 # check whether dust_extinction_array was compiled in cython or not. 
 # If not, compile now
 # TODO: check real speed difference between python and cython
+# factor ~60 faster
 try:
     from dust_extinction_array import dust_extinction_array
 except ImportError:
     print 'It seems like dust_extinction_array.pyx was not compiled properly.'
     print 'This is done by typing:'
     print 'python setup.py build_ext --inplace'
-    print 'in the folder of PyS_compspec.py.'
+    print 'in the folder of PyS_SDSScompspec.py.'
     print ''
     if raw_input("Do you wish to compile it now? (y/N) ") == ('y' or 'Y'):
         import os
@@ -86,7 +87,11 @@ from SDSSclasses import *
 
 # Need resolving power of spectrum?
 
-def read_spec_fitsio(qso, spec, settings):
+def read_spec_fitsio(qso, spec, settings=None):
+
+# TODO: we could check if Z_ERR is < 0, if so, it means that the 
+# estimate for the redshift is probably incorrect
+
 # The same function as read_spec(), but based on fitsio, which is much faster, since
 # it's based on cfitsio
 # Function whic is called to read spec FITS file
@@ -94,7 +99,6 @@ def read_spec_fitsio(qso, spec, settings):
     #Open FITS file
     qso = qso.rstrip()
     hdu = fitsio.FITS(qso)
-
 
     # Read in all necessary information from Header of
     # defining hdu0header is faster than accessing hdu[0].header each time
@@ -115,22 +119,23 @@ def read_spec_fitsio(qso, spec, settings):
     # defining hdu1 variable is faster than accessing hdu[1] each time
     hdu1header = hdu[1].read_header()
     spec.npix = hdu1header['NAXIS2']
+
     # Get the table data from HDU 1; it contains the flux
     # Change tabledata = hdu.data to tabledata = table.view(np.recarray)
     TableHDU1 = hdu[1]
     # TODO: maybe make copy?
     spec.flux = TableHDU1['flux'][:]#.copy()
-
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
     spec.flux_error = sqrt(1/TableHDU1['ivar'][:])
+    spec.model_sdss = TableHDU1['model'][:]
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     spec.z = hdu[2]['Z'][0]
+    zerr   = hdu[2]['Z_ERR'][0]
+
     #print "%.15f" % spec.z
 
-    #magnitudes not needed for now. Did they cause memory overhead? 
-    # TODO: check that!
     # spec.mag = TableHDU2['PSFMAG'].copy(
 
     #TODO: Read in primary target information?
@@ -153,12 +158,19 @@ def read_spec_fitsio(qso, spec, settings):
     #             spec.snr.append(0)
             
     del(TableHDU1)
-    hdu.close()
+#    hdu.close()
+
+    if zerr < 0:
+        print 'bad zerr'
+        print zerr, spec.z
+        spec.z = 999
+        return 2
+
     return 0
 
 
 
-def read_spSpec_fitsio(qso, spec, settings):
+def read_spSpec_fitsio(qso, spec, settings=None):
 # same function as read_spSpec implemented with fitsio instead of astropy
 # Function which is called to read spSpec FITS file
 
@@ -177,6 +189,7 @@ def read_spSpec_fitsio(qso, spec, settings):
     spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
     spec.MJD = hdu0header['MJD']
     spec.z = hdu0header['Z']
+    zerr   = hdu0header['Z_ERR']
     spec.mag = hdu0header['MAG']
     spec.npix = hdu0header['NAXIS1']
     spec.beginwl = hdu0header['CRVAL1']
@@ -205,10 +218,16 @@ def read_spSpec_fitsio(qso, spec, settings):
     #             spec.snr.append(0)
     del(ImageData)
     hdu.close()
+
+    if zerr < 0:
+        print zerr, spec.z
+        spec.z = 999
+        return 2
+
     return 0
 # What is primary target flag needed for?
 
-def read_spec(qso, spec, settings):
+def read_spec(qso, spec, settings = None):
 # Function whic is called to read spec FITS file
 
     #Open FITS file
@@ -282,7 +301,7 @@ def read_spec(qso, spec, settings):
     return 0
 
 
-def read_spSpec(qso, spec, settings):
+def read_spSpec(qso, spec, settings=None):
 # Function which is called to read spSpec FITS file
 
     #Open FITS file
@@ -629,16 +648,22 @@ def find_element_larger_in_arrays(wave, target_wave, npix):
     # bigger than target_wave. 
     # Note: i is always larger than target_wave! If smaller than target_wave is 
     # wanted, take returnvalue - 1
-    # TODO: Understand exactly how it works :) and think of a way to catch 
-    # exception 
-#    i = next(x[0] for x in enumerate(wave) if x[1] > target_wave)
-    i = 0
-    while True:
-        if i < npix and wave[i] < target_wave:
-            i += 1
-        else:
-            break
-    return i
+
+    # Numpy where MUCH faster than using while!
+
+    if wave[npix-1] < target_wave:
+        return npix-1
+    else:
+        i = np.where(wave > target_wave)[0][0]
+        return i
+
+    # old depcrecated way of calculating find_element
+    # while True:
+    #     if i < npix and wave[i] < target_wave:
+    #         i += 1
+    #     else:
+    #         break
+
 
 def calc_siqr(flux, nmed):
     # Function which calculates the 68% semi-interquartile range, in the exact same way
@@ -657,14 +682,13 @@ def calc_siqr(flux, nmed):
 
 def drop_data_from_intervals(wave, flux, flux_error, index, deviation_factor):
     # working on log data currently
-    try:
-        mean       = np.average(flux[index], weights=(1/flux_error[index]))
-    except ZeroDivisionError:
-        print 'problem4!'
-        print flux[index], flux_error[index]
-        for i in xrange(np.size(flux_error)):
-            print flux_error[i], i
-        print np.isposinf(flux_error[index])
+    if np.size(index) > 0:
+        try:
+            mean       = np.average(flux[index], weights=(1/flux_error[index]))
+        except ZeroDivisionError:
+            # currently we just drop the whole interval
+            return []
+    else:
         return []
 #    mean_error = np.mean(flux_error[index])
     std        = np.absolute(np.std(flux[index]))
@@ -677,9 +701,19 @@ def drop_data_from_intervals(wave, flux, flux_error, index, deviation_factor):
     indices = intersect1d(index, indices)
     return indices
 
+def calc_zem_index(zem, z_min, delta):
+    # index for binning data into redshift bins
+    if zem != 999:
+        zem_index = (zem - z_min)/delta
+    else:
+        zem_index = -1
+    if zem_index > 0:
+        zem_index = int(zem_index)
+    return zem_index
+
 
 #TODO: check influence of np.zeros in code!
-def fit_powerlaw_individual(spec, return_data = 0, deviation_factor = 3.0):
+def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 3.0, zem_index = -999):
 # This function fits the powerlaw to the spectrum, by taking the emission free regions
 # emfree and fits a linear function to log-log flux- wavelength data
 # In contrast to fit_powerlaw() it doesn't take the median of the intervals, but actually
@@ -687,15 +721,52 @@ def fit_powerlaw_individual(spec, return_data = 0, deviation_factor = 3.0):
 
 # TODO: properly comment function, important since some things not so obvious
     # define emission free regions
-    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0], [1610,1790]])
+#    emfree = np.array([[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0], [1610,1790]])
+
+    zem     = spec.z
+    z_max   = settings.z_max
+    z_min   = settings.z_min
+    z_delta = settings.z_delta
+    emfree_intervals = [[1280.0,1292.0],[1312.0,1328.0],[1345.0,1365.0],[1440.0,1475.0], 
+                        [1685, 1715], [1730, 1742], [1805, 1837], [2020, 2055], [2190, 2210]]
+    # 1. z_max = 3.6, maybe 4.0
+    # 2. z_max = 3.6
+    # 3. z_max = 3.6
+    # 4. z_max = 3.2
+    # 5. z_max = 2.8
+    # zem_index: 0 == 2.2 - 2.4; 
+    #            1 == 2.4 - 2.8; 
+    #            2 == 2.8 - 3.2;
+    #            3 == 3.2 - 3.6; 
+    #            4 == 3.6 - 4.0;
+    #            5 == 4.0 - 4.4
+    #            ...
+    # if zem_index == -999
+    if zem_index == -999:
+        emfree = np.array(emfree_intervals)
+    else:
+        emfree_int_tuples= [(emfree_intervals[0], z_max), (emfree_intervals[1], z_max), 
+                            (emfree_intervals[2], z_max), (emfree_intervals[3], z_max),
+                            (emfree_intervals[4], 4.0),   (emfree_intervals[5], 3.6  ),
+                            (emfree_intervals[6], 3.6),   (emfree_intervals[7], 3.2  ),
+                            (emfree_intervals[8], 2.8)]
+        # construct emfree array from emfree_int_tuples
+        emfree = []
+        zem_obj = z_min + zem_index*z_delta + z_delta/2
+        for i in xrange(len(emfree_int_tuples)):
+            if zem_obj < emfree_int_tuples[i][1]:
+                emfree.append(emfree_intervals[i])
+#        print emfree
+#        if zem_index > 4:
+#            emfree = np.asarray(emfree[4])
+        emfree = np.asarray(emfree)
     # we use 4 emission free regions
-    emfree_regions_num = 5
+    emfree_regions_num = int(np.size(emfree)/2)
     # create emtpy lists for the log wavelength, log flux and error data
     npix = spec.npix
     wave = spec.wave
     flux = spec.flux
     flux_error = spec.flux_error
-    zem  = spec.z
 
     wave_log       = np.zeros((emfree_regions_num, npix))
     flux_log       = np.zeros((emfree_regions_num, npix))
@@ -743,7 +814,7 @@ def fit_powerlaw_individual(spec, return_data = 0, deviation_factor = 3.0):
         flux_temp       = np.log10(flux)
         np.put(flux_log[i], interval_index, flux_temp[keep_indices])
 
-        flux_error_temp = flux_error / flux#np.log10(flux_error)
+        flux_error_temp = flux_error / (flux * np.log(10))#np.log10(flux_error)
         np.put(flux_error_log[i], interval_index, flux_error_temp[keep_indices])
         
         if np.size(index) > 0:
@@ -773,11 +844,12 @@ def fit_powerlaw_individual(spec, return_data = 0, deviation_factor = 3.0):
     #     sys.exit()
     
     # Fit a linear function to the log data:
-    if emfree_regions_data == emfree_regions_num:# >= 4:
+    # also fit if we only have 4 of 5 regions for high redshift objects
+    if emfree_regions_data >= 4 and np.size(np.isfinite(wave_log)) > 2 and np.size(np.isfinite(flux_log)) > 2:# >= 4:
         # fit linear function func to out log arrays
         # coeff: fitting parameters
         # pcov: covariance matrix, used to retrieve error for alpha.
-        coeff, pcov, redchisq = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=False)
+        coeff, pcov, redchisq = linfit(wave_log, flux_log, sigmay=flux_error_log, cov=True, chisq=True, relsigma=False, residuals=False)
         # assign coefficients to our spectrum
         spec.beta = coeff[0]
         spec.alpha = -spec.beta - 2
@@ -809,8 +881,6 @@ def fit_powerlaw_individual(spec, return_data = 0, deviation_factor = 3.0):
     del(wave_temp)
     del(flux_error_temp)
 
-
-#TODO: check influence of np.zeros in code!
 def fit_powerlaw(spec, return_data = 0):
 # This function fits the powerlaw to the spectrum, by taking the emission free regions
 # emfree and fits a linear function to log-log flux- wavelength data
@@ -904,7 +974,7 @@ def fit_powerlaw(spec, return_data = 0):
 
 #        print 'normale func:', wave_log, flux_log
 
-        coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
+        coeff, pcov, redchisq, residuals = linfit(wave_log, flux_log, sigmay=flux_error_log, cov=True, chisq=True, relsigma=False, residuals=True)
         
 #        print wave_log, flux_log
         
@@ -975,69 +1045,70 @@ def build_compspec(cspec, spec):
     # the for loop, in order to align the wavelength, ... arrays, so that we
     # actually add the correct contributions of each spectrum to the correct 
     # wavelength in the composite spectrum    
-    iterator = find_element_larger_in_arrays(spec.wave, cspec.wave[0], spec.npix)
+    iterator = int(find_element_larger_in_arrays(spec.wave, cspec.wave[0], spec.npix))
     if spec.wave[iterator] > cspec.wave[0] and iterator > 0:
         iterator -= 1
-    citerator = find_element_larger_in_arrays(cspec.wave, spec.wave[0], spec.npix)
+    citerator = int(find_element_larger_in_arrays(cspec.wave, spec.wave[0], spec.npix))
 
     params_iter = open("params_iter.txt", "a")
     params_iter.write(str(iterator)+"    "+str(citerator)+"     "+str(spec.filename))
 
     # experimental:
     # Does not give exact results as old version below, but MUCH faster!
-#     index = np.where((spec.wave                 != 0)            &
-#                      (spec.wave                 > cspec.wave[0]) &
-#                      (spec.wave                 > spec.lambmin)  &
-#                      (spec.wave                 < spec.lambmax)  &
-#                      (np.isnan(spec.flux)       == False)        &
-#                      (np.isnan(spec.flux_error) == False)        &
-#                      (spec.flux_error           != 0)            &
-#                      (spec.powerlaw             != 0))[0]
+    index = np.where((spec.wave                 != 0)            &
+                     (spec.wave                 > cspec.wave[0]) &
+                     (spec.wave                 > spec.lambmin)  &
+                     (spec.wave                 < spec.lambmax-10**(0.0001))  &
+                     (np.isnan(spec.flux)       == False)        &
+                     (np.isnan(spec.flux_error) == False)        &
+                     (spec.flux_error           != 0)            &
+                     (spec.powerlaw             != 0))[0]
 
-# #    print index
+    indices_for_cspec = np.subtract(index, iterator)
+    indices_for_cspec = np.add(indices_for_cspec, citerator)#np.arange(citerator, spec.npix - iterator)
+    indices_for_spec  = index#np.add(index, iterator)
 
-#     indices_for_cspec = np.add(index,citerator)#np.arange(citerator, spec.npix - iterator)
-#     indices_for_spec  = np.add(index, iterator)
-# #    print citerator
-# #    print indices_for_cspec
-#     temp_sum   = np.zeros(5763)
-#     temp_sum2  = np.zeros(5763)
-#     temp_nhist = np.zeros(5763)
-#     np.put(temp_sum,   indices_for_cspec, spec.flux[indices_for_spec] / spec.powerlaw[indices_for_spec])
-#     np.put(temp_sum2,  indices_for_cspec, (spec.flux[indices_for_spec] / spec.powerlaw[indices_for_spec])**2)
-#     np.put(temp_nhist, indices_for_cspec, 1)
+    temp_sum   = np.zeros(5763)
+    temp_sum2  = np.zeros(5763)
+    temp_nhist = np.zeros(5763)
+    np.put(temp_sum,   indices_for_cspec, spec.flux[indices_for_spec] / spec.powerlaw[indices_for_spec])
+    np.put(temp_sum2,  indices_for_cspec, (spec.flux[indices_for_spec] / spec.powerlaw[indices_for_spec])**2)
+    np.put(temp_nhist, indices_for_cspec, 1)
 
-# #    print temp_sum
-# #    print spec.flux[index] / spec.powerlaw[index]
+#    print temp_sum
+#    print spec.flux[index] / spec.powerlaw[index]
 
-#     cspec.sum   = np.add(cspec.sum,   temp_sum)
-#     cspec.sum2  = np.add(cspec.sum2,  temp_sum2)
-#     cspec.nhist = np.add(cspec.nhist, temp_nhist)
+    cspec.sum   = np.add(cspec.sum,   temp_sum)
+    cspec.sum2  = np.add(cspec.sum2,  temp_sum2)
+    cspec.nhist = np.add(cspec.nhist, temp_nhist)
 
+
+    # MUCH slower (50ms vs. 500mu s per call) than above. However, slightly different results
+    # Could compile in Cython and see how fast then
     # Run over all pixels / wavelengths of the spectrum
     # - iterator, because we don't want to access elements outside of array bounds
     # from 1 to pixels - iterator - 1, because we check for lambmin and lambmax
     # by looking at element i - 1, i + 1 respectively
-    for i in xrange(1, spec.npix - iterator - 1):
-        # if a lot of checks are true, 
-        if(spec.wave[i+iterator]                             != 0             and
-           spec.wave[i+iterator] + spec.wave[i+iterator - 1] > 2*spec.lambmin and
-           spec.wave[i+iterator] + spec.wave[i+iterator + 1] < 2*spec.lambmax and
-           np.isnan(spec.flux[i+iterator])                   == 0             and
-           np.isnan(spec.flux_error[i+iterator])             == 0             and
-           spec.flux_error[i+iterator]                       != 0             and
-           spec.powerlaw[i+iterator]                         != 0):
-            # we actually use the spectrum to add to the composite spectrum
-            cspec.sum[i+citerator]   += spec.flux[i+iterator]/spec.powerlaw[i+iterator]
-            cspec.sum2[i+citerator]  += (spec.flux[i+iterator]/spec.powerlaw[i+iterator])**2
-            # and we count this contribution to this wavelength
-            cspec.nhist[i+citerator] += 1
-        else: 
-            # if checks not met, go to next pixel
-            continue
-        # if we would be outside of lambmax in the next iteration, stop for loop
-        if spec.wave[i+iterator] + spec.wave[i+iterator + 1] > 2*spec.lambmax: 
-            break
+    # for i in xrange(1, spec.npix - iterator - 1):
+    #     # if a lot of checks are true, 
+    #     if(spec.wave[i+iterator]                             != 0             and
+    #        spec.wave[i+iterator] + spec.wave[i+iterator - 1] > 2*spec.lambmin and
+    #        spec.wave[i+iterator] + spec.wave[i+iterator + 1] < 2*spec.lambmax and
+    #        np.isnan(spec.flux[i+iterator])                   == 0             and
+    #        np.isnan(spec.flux_error[i+iterator])             == 0             and
+    #        spec.flux_error[i+iterator]                       != 0             and
+    #        spec.powerlaw[i+iterator]                         != 0):
+    #         # we actually use the spectrum to add to the composite spectrum
+    #         cspec.sum[i+citerator]   += spec.flux[i+iterator]/spec.powerlaw[i+iterator]
+    #         cspec.sum2[i+citerator]  += (spec.flux[i+iterator]/spec.powerlaw[i+iterator])**2
+    #         # and we count this contribution to this wavelength
+    #         cspec.nhist[i+citerator] += 1
+    #     else: 
+    #         # if checks not met, go to next pixel
+    #         continue
+    #     # if we would be outside of lambmax in the next iteration, stop for loop
+    #     if spec.wave[i+iterator] + spec.wave[i+iterator + 1] > 2*spec.lambmax: 
+    #         break
 
     params_iter.close()
     # if everything goes well and we used the QSO, return 0
@@ -1292,6 +1363,119 @@ def build_fits_file(cspec, spec, outfile, settings):
     table_header['SIQR_A'] = (cspec.siqr_a, '68% semi-interquartile range on alpha')
 
     
+
+    # hdu.writeto('test.fits')
+    print 'write FITS file'
+    hdulist = fits.HDUList([hdu, TableHDU])
+    # write to outfile and 'clobber=True' -> overwrite if existing
+    hdulist.writeto(outfile, clobber=True)
+
+
+
+def write_compspectra_to_file(compspectra, settings, outfile):
+    # TODO: need extra stuff, but for now should work
+
+# Build the actual FITS output file
+    # set a few variables
+    i = 0
+    coeff1 = 0.0001
+    cspec     = compspectra[0]
+    ncspec    = np.size(compspectra)
+    npix      = cspec.npix
+    date_time = datetime.now()
+
+    hdu0_row1 = []              # 1 - average transmittance metal calibrated
+    hdu0_row2 = []              # error of average transmittance
+    hdu0_row3 = []              # number of contributing objects to wavelength
+    hdu0_row4 = []              # 1 - average transmittance not calibrated
+
+    # Add a few header keys
+    prihdr = fits.Header()
+    prihdr['PROGRAM'] = settings.program_name
+    prihdr['AUTHOR']  = ('Sebastian Schmidt')
+    prihdr['DATE']    = (date_time.strftime("%A, %d. %B %Y %I:%M%p"), 'Date created')
+    prihdr['ARRAY0']  = ('WAVE', 'Wavelength of composite spectra in Angstrom')
+    for i in xrange(ncspec):
+        # j counts the number of the array
+        # 1, because ARRAY0 is set before
+        j = 1 + i*4
+        keyword1 = 'ARRAY' + str(j)
+        keyword2 = 'ARRAY' + str(j+1)
+        keyword3 = 'ARRAY' + str(j+2)
+        keyword4 = 'ARRAY' + str(j+3)
+        prihdr[keyword1] = ('FLUX', 'Flux of composite spectrum'+str(i))
+        prihdr[keyword2] = ('EFLUX', 'Error of flux of composite spectrum'+str(i))
+        prihdr[keyword3] = ('NORM', 'Normalized flux of composite spectrum'+str(i))
+        prihdr[keyword4] = ('CONT', 'Continuum fit of composite spectrum'+str(i))
+
+    prihdr['NCSPECS'] = (ncspec, 'Number of composite spectra')
+    prihdr['Z_MAX']   = (settings.z_max, 'Maximal redshift binned')
+    prihdr['Z_MIN']   = (settings.z_min, 'Minimal redshift binned')
+    prihdr['Z_DELTA'] = (settings.z_delta, 'width of redshift bin')
+    prihdr['NZBINS']  = (settings.z_bins, 'number of redshift bins')
+#    prihdr['NSPECTRA']= (cspec.spectra_count, 'Total number of used / contributing QSOs')
+#    prihdr['NSPEC']   = (nspec, 'Total number of QSOs considered')
+    prihdr['VACUUM']  = (1, 'Wavelengths are in vacuum')
+    prihdr['DC_FLAG'] = (1, 'Log-Linear Flag')
+    prihdr['CRPIX1']  = (1, 'Starting pixel (1-indexed)')
+    prihdr['COEFF0']  = np.log10(cspec.wave[0])
+    prihdr['COEFF1']  = coeff1
+    prihdr['CRVAL1']  = np.log10(cspec.wave[0])
+    prihdr['CD1_1']   = coeff1
+    prihdr['DR']      = (10, 'SDSS Data release used')
+
+    print 'creation of arrays for HDU0'
+
+    # zip arrays; will create one array of 3 tuples from the three
+    # individual arrays
+    print 'zipping arrays for HDU0'
+    zipped_hdu = []
+    zipped_hdu.append(compspectra[0].wave)
+    for cspec in compspectra:
+        zipped_hdu.append(cspec.flux)
+        zipped_hdu.append(cspec.flux_error)
+        zipped_hdu.append(cspec.normalized)
+        zipped_hdu.append(cspec.powerlaw)
+
+    print np.shape(zipped_hdu)
+#    zipped_hdu = zip(zipped_hdu)
+#    print np.shape(zipped_hdu)
+    # currently wrong format, so we transpose the array
+#    zipped_hdu = np.transpose(zipped_hdu)
+    print np.shape(zipped_hdu)
+
+    # create the Primary ouput HDU and print it to file
+    hdu = fits.PrimaryHDU(zipped_hdu, header=prihdr)
+
+    # Create 2nd HDU containing information on all QSOs
+    # Calculate arrays, which will fill the table HDU
+    # TODO: optimize creation of arrays! Lots of potential probably
+
+    print 'creation of arrays for HDU1'
+    counter_array        = np.zeros(ncspec)
+    zem_index_array      = np.zeros(ncspec)
+    zem_max_in_bin_array = np.zeros(ncspec)
+    zem_min_in_bin_array = np.zeros(ncspec)
+
+    for i, cspec in enumerate(compspectra):
+        counter_array[i]        = cspec.spectra_count
+        zem_index_array[i]      = cspec.zem_index
+        zem_max_in_bin_array[i] = cspec.max_z_in_bin
+        zem_min_in_bin_array[i] = cspec.min_z_in_bin
+        if i % 500 == 0:
+            print i, "spectra added to arrays"
+    
+    # write arrays to Table HDU:
+    print 'write arrays to HDU1'
+    TableHDU = fits.BinTableHDU.from_columns(
+        fits.ColDefs([fits.Column(name='COUNT',  format='J', array=counter_array),
+                      fits.Column(name='ZEM',    format='D', array=zem_index_array),
+                      fits.Column(name='Z_MAX',  format='D', array=zem_max_in_bin_array),
+                      fits.Column(name='Z_MIN',  format='D', array=zem_min_in_bin_array)]))
+
+    # Now write new keywords to Table header
+    table_header = TableHDU.header
+    table_header['NCSPEC']  = (ncspec, 'Total number of composite spectra')
 
     # hdu.writeto('test.fits')
     print 'write FITS file'
