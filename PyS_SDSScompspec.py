@@ -16,7 +16,12 @@ import multiprocessing as mp
 # from guppy import hpy
 
 
-from SDSSmodules import *
+from SDSSfiles import *
+from SDSSfitting import *
+from SDSScorrections import *
+from SDSSoutput import *
+from SDSScspec import *
+from SDSSutilities import *
 from SDSSclasses import *
 
 # HDU numbers in this file are given starting from 0, since it is
@@ -80,6 +85,9 @@ def main(args, settings = program_settings()):
 
     alpha_wrong_count = 0
 
+    # resid correction:
+    resid_corr = read_resid_corr('residcorr_v5_4_45.dat')
+
     # Do filetype check only once
     filetype = check_filetype(files[0])
 
@@ -102,8 +110,13 @@ def main(args, settings = program_settings()):
                     if read_spSpec_fitsio(files[i+j], spectra[i+j], settings) == 1:
                         continue
                 if filetype == 2:
-                    if read_spec_fitsio(files[i+j], spectra[i+j], settings) == 1:
+                    if read_spec_fitsio(files[i+j], spectra[i+j], settings, resid_corr = resid_corr) == 1:
                         continue
+                if filetype == 3:
+                    if read_speclya_fitsio(files[i+j], spectra[i+j], settings, resid_corr = resid_corr) == 1:
+                        continue
+                if settings.flux_corr == 1:
+                    apply_flux_correction(spectra[i+j], settings.flux_corr_list[i+j])
             # Fill the l and b arrays with the coordinates of the buffer
             # and get the E(B-V) values from the dustmap
             print 'filling coordinate arrays from buffer...'
@@ -126,10 +139,16 @@ def main(args, settings = program_settings()):
             # fit_powerlaw(spectra[i], 0)
             zem_index = calc_zem_index(spectra[i].z, z_min, z_delta)
             fit_powerlaw_individual(spectra[i], settings, return_data=0, zem_index = zem_index)
+            #fit_powerlaw_plus_compspec(spectra[i], settings, return_data=0, zem_index = zem_index)
+            #spectra[i].powerlaw = spectra[i].model_sdss
+            # if spectra[i].PCA_qual == 1:
+            #     spectra[i].alpha = 1.0
+            # else:
+            #    print spectra[i].PCA_qual
+
             if spectra[i].alpha == -999:
                 print 'fitting failed!'
                 print i, spectra[i].alpha, spectra[i].z
-#            spectra[i].powerlaw = spectra[i].model_sdss
             # alpha cut
             if spectra[i].alpha < alpha_top and spectra[i].alpha > alpha_low:
                 # calculate comp spec

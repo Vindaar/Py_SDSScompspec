@@ -150,8 +150,7 @@ def main(args, settings = program_settings()):
         files = list(settings.inputfile)
     nspec = len(files)
     # Create a compspec object with 5763 pixels
-    compspec = comp_spectrum(5763
-)
+    compspec = comp_spectrum(5763)
     # Read filename for the output FITS file:
     if settings.outfile == '':
         settings.outfile = raw_input('Give the name of the output FITS file: ')

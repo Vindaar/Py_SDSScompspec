@@ -25,8 +25,9 @@ def perform_fitting(cspectra, settings):
         cspec.npix = np.size(cspec.flux)
         cspec.flux_error = cspec.sum2
         cspec.z   = 0
-        fit_powerlaw_individual(cspec, settings, zem_index = cspec.zem_index)
+        fit_powerlaw_individual(cspec, settings, zem_index = -999)#cspec.zem_index)
         cspec.normalized = cspec.flux / cspec.powerlaw
+        cspec.norm       = cspec.norm / cspec.spectra_count
 
 
 def perform_plotting(cspectra, settings):
@@ -36,26 +37,26 @@ def perform_plotting(cspectra, settings):
     axarr[0].set_xlabel('Wavelength / Angstrom')
     axarr[0].set_ylabel('Flux')
 
+    # axarr[0].plot(cspectra[5].wave, cspectra[5].normalized, 'orange')
+    # axarr[0].plot(cspectra[4].wave, cspectra[4].normalized, 'k')
+    # axarr[0].plot(cspectra[3].wave, cspectra[3].normalized, 'c')
+    # axarr[0].plot(cspectra[2].wave, cspectra[2].normalized, 'g')
+    # axarr[0].plot(cspectra[1].wave, cspectra[1].normalized, 'b')
     axarr[0].plot(cspectra[0].wave, cspectra[0].normalized, 'r')
-    axarr[0].plot(cspectra[1].wave, cspectra[1].normalized, 'b')
-    axarr[0].plot(cspectra[2].wave, cspectra[2].normalized, 'g')
-    axarr[0].plot(cspectra[3].wave, cspectra[3].normalized, 'c')
-    axarr[0].plot(cspectra[4].wave, cspectra[4].normalized, 'k')
-    axarr[0].plot(cspectra[5].wave, cspectra[5].normalized, 'orange')
-    # axarr[0].plot(cspectra[6].wave, cspectra[6].normalized, 'm')
-    # axarr[0].plot(cspectra[7].wave, cspectra[7].normalized, 'y')
-    # axarr[0].plot(cspectra[8].wave, cspectra[8].normalized, 'grey')
 
-    axarr[1].plot(cspectra[0].wave, cspectra[0].sum, 'r')
-    axarr[1].plot(cspectra[1].wave, cspectra[1].sum, 'b')
-    axarr[1].plot(cspectra[2].wave, cspectra[2].sum, 'g')
-    axarr[1].plot(cspectra[3].wave, cspectra[3].sum, 'c')
-    axarr[1].plot(cspectra[4].wave, cspectra[4].sum, 'k')
-    axarr[1].plot(cspectra[5].wave, cspectra[5].sum, 'orange')
-    axarr[1].plot(cspectra[6].wave, cspectra[6].sum, 'm')
-    axarr[1].plot(cspectra[7].wave, cspectra[7].sum, 'y')
-    axarr[1].plot(cspectra[8].wave, cspectra[8].sum, 'grey')
+    # # axarr[0].plot(cspectra[6].wave, cspectra[6].normalized, 'm')
+    # # axarr[0].plot(cspectra[7].wave, cspectra[7].normalized, 'y')
+    # # axarr[0].plot(cspectra[8].wave, cspectra[8].normalized, 'grey')
 
+    # axarr[1].plot(cspectra[8].wave, cspectra[8].norm, 'grey')
+    # axarr[1].plot(cspectra[7].wave, cspectra[7].norm, 'y')
+    # axarr[1].plot(cspectra[6].wave, cspectra[6].norm, 'm')
+    # axarr[1].plot(cspectra[5].wave, cspectra[5].norm, 'orange')
+    # axarr[1].plot(cspectra[4].wave, cspectra[4].norm, 'k')
+    # axarr[1].plot(cspectra[3].wave, cspectra[3].norm, 'c')
+    # axarr[1].plot(cspectra[2].wave, cspectra[2].norm, 'g')
+    # axarr[1].plot(cspectra[1].wave, cspectra[1].norm, 'b')
+    axarr[1].plot(cspectra[0].wave, cspectra[0].norm, 'r')
 
     plt.show()
 
@@ -66,8 +67,13 @@ def main(args):
     settings = program_settings()
     settings.program_name = 'PyS_SDSS-calc_compspectra'
 
+    settings.z_max = 3.0
+    settings.z_min = 2.5
     z_max   = settings.z_max
     z_min   = settings.z_min
+    settings.z_delta = 0.5
+    settings.z_bins  = int(1)
+
     z_delta = settings.z_delta
     z_bins  = settings.z_bins
 
@@ -80,12 +86,17 @@ def main(args):
     for cspec in cspectra:
         # np.log10(900) == 2.9542... Need 4 digits to compare later!
         cspec.wave = 10**(2.9542 + 0.0001*np.arange(5763))
+        cspec.norm = np.zeros(5763)
 
     print 'initialize spectra'
     spectra = [spectrum() for i in xrange(nspec)]
     coordinates = coordinate_arrays(nspec)    
     dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
     outfile = 'saved_compspectra.fits'
+    zem_index_paths = open('zem_index_files.txt', 'w')
+
+    # resid correction:
+    resid_corr = speclya_resid('residcorr_v5_4_45.dat')
 
     for i, file in enumerate(files):
         if i % 5000 == 0:
@@ -107,6 +118,9 @@ def main(args):
                 if filetype == 2:
                     if read_spec_fitsio(files[i+j], spectra[i+j], settings) == 1:
                         continue
+                if filetype == 3:
+                    if read_speclya_fitsio(files[i+j], spectra[i+j], settings, resid_corr = resid_corr) == 1:
+                        continue
             # Fill the l and b arrays with the coordinates of the buffer
             # and get the E(B-V) values from the dustmap
             print 'filling coordinate arrays from buffer...'
@@ -120,7 +134,8 @@ def main(args):
         # determine bin index for cspectra
         zem_index = calc_zem_index(spec.z, z_min, z_delta)
         # Conditions on the QSOs:
-        if zem_index > 0 or zem_index == 0:
+        # if zem_index > 0 or zem_index == 0:
+        if zem_index == 0:
             cspec = cspectra[zem_index]
 
             cspec.spectra_count += 1
@@ -149,8 +164,9 @@ def main(args):
         
 
             #index = np.where(spec.rest_wave)[0]
-            # TEST
+            # probably need more restrictions?
             index = np.where((spec.flux > 0)                         &
+                             (np.isnan(spec.flux) == False)          &
                              (spec.flux_error > 0)                   &
                              (np.isposinf(spec.flux_error) == False) &
                              (np.isnan(spec.flux_error) == False))[0]
@@ -171,14 +187,30 @@ def main(args):
                 print a1, a2, a3, a4
             
 
-
+                
+            print>>zem_index_paths, '/mnt/Daten/Uni/SDSS/data/DR10/spec-'+str(spec.plateid).zfill(4)+'-'+str(spec.MJD)+'-'+str(spec.fiberid).zfill(4)+'.fits' + '\t' + str(zem_index)
             temp_sum   = np.zeros(5763)
             temp_sum2  = np.zeros(5763)
-            np.put(temp_sum,   indices_for_cspec, spec.flux[indices_for_spec])
-            np.put(temp_sum2,  indices_for_cspec, spec.flux_error[indices_for_spec])
+            temp_norm  = np.zeros(5763)
+            temp_nhist = np.zeros(5763)
+            zem_index = calc_zem_index(spec.z, settings.z_min, settings.z_delta)
+            fit_powerlaw_individual(spec, settings, return_data=0, zem_index = zem_index)
+            if spec.alpha != -999:
+                nhist = np.empty(5763)
+                nhist.fill(1.0)
+                np.put(temp_sum,   indices_for_cspec, spec.flux[indices_for_spec])
+                np.put(temp_sum2,  indices_for_cspec, spec.flux_error[indices_for_spec])
+                print np.shape(spec.flux), np.shape(spec.model_sdss)
+                spec.normalized = spec.flux / spec.model_sdss
+                np.put(temp_norm,  indices_for_cspec, spec.normalized[indices_for_spec])
+                np.put(temp_nhist, indices_for_cspec, nhist[indices_for_spec])
 
-            cspec.sum   = np.add(cspec.sum,   temp_sum)
-            cspec.sum2  = np.add(cspec.sum2,  temp_sum2)
+                cspec.sum   = np.add(cspec.sum,   temp_sum)
+              #  print np.where(cspec.sum != None)[0]
+                cspec.sum2  = np.add(cspec.sum2,  temp_sum2)
+                cspec.norm  = np.add(cspec.norm,  temp_norm)
+                cspec.nhist = np.add(cspec.nhist, temp_nhist)
+                del(spectra[i].normalized)
     
 #            indices = np.in1d(cspec.wave, spec.rest_wave)
 #            print np.where(indices == True)
@@ -216,7 +248,10 @@ def main(args):
         if cspec.spectra_count > 0:
             print np.shape(cspec.sum)
             print np.shape(cspec.spectra_count), cspec.spectra_count
-            cspec.sum = cspec.sum / cspec.spectra_count
+            print cspec.sum
+            print cspec.nhist
+            cspec.sum = cspec.sum / cspec.nhist
+            print cspec.sum
             bin = cspec.zem_in_bin
             bin = np.sort(bin)
             cspec.max_z_in_bin = bin[0]

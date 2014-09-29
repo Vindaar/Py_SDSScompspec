@@ -145,6 +145,10 @@ class program_settings:
         self.outfile_basis    = ''
         self.spectra_list     = ''
         self.cspec            = 0
+        self.flux_corr        = 0    # flag which determinse if flux 
+                                     # correction is performed
+        self.flux_corr_list   = ''   # list containing FITS
+                                     # files of flux correction functions
         self.deviation_factor = 3.0
         self.z_max            = 8.0  # maximum emission redshift for creation
                                      # of redshift bins
