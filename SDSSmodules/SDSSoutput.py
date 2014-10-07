@@ -1,7 +1,12 @@
 # This module contains the functions, which write output to disk
 
+import numpy as np
+
 # contains function to call date and time
 from datetime import datetime
+from astropy.io import fits
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 
 ################################################################################
 ############################## Output ##########################################

@@ -3,6 +3,12 @@
 # as well as computational utility functions
 # like align two arrays etc.
 
+import numpy as np
+
+# re contains the function search, which is used to search through
+# argv
+import re
+
 #####################################################################################
 ################################### Array handling ##################################
 #####################################################################################
@@ -116,7 +122,7 @@ def drop_data_from_intervals(wave, flux, flux_error, index, deviation_factor):
     # the mean in the interval
     indices = np.where(np.absolute(flux - mean) < deviation_factor*std)[0]
 #    indices = np.where(np.logical_and(np.absolute(flux - mean) < 3*std, np.absolute(flux_error - mean_error) < 3*std_error))[0]
-    indices = intersect1d(index, indices)
+    indices = np.intersect1d(index, indices)
     return indices
 
 def calc_zem_index(zem, z_min, delta):
@@ -231,7 +237,7 @@ def args_check(args, settings):
         try:
             settings.flux_corr_list = open(args[i+1], 'r').readlines()
             settings.flux_corr = 1
-        else IndexError:
+        except IndexError:
             print "Error: if you set --flux_corr flag, you have to provide"
             print "a list of FITS files, which contain the flux correction"
             print "functions."

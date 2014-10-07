@@ -48,7 +48,7 @@ def main(args, settings = program_settings()):
         files = settings.spectra_list
     else:
         files = list(settings.inputfile)
-    dustmap = '/home/basti/SDSS_indie/dust_maps/maps/SFD_dust_4096_%s.fits'
+    dustmap = '/home/z3399255/ASTRO/code/C/dust_getval/SFD_dust_4096_%s.fits'
 
     # Read filename for the output FITS file:
     if settings.outfile == '':
@@ -64,8 +64,8 @@ def main(args, settings = program_settings()):
     # Create a compspec object with 5763 pixels. Taken from C code
     compspec = comp_spectrum(5763)
     i = 0
-    print 'create color curves'
-    a = create_colorcurves()
+    #print 'create color curves'
+    #a = create_colorcurves()
     alpha_top = 1.5
     alpha_low = -2
     spectra_count = 0
@@ -110,13 +110,16 @@ def main(args, settings = program_settings()):
                     if read_spSpec_fitsio(files[i+j], spectra[i+j], settings) == 1:
                         continue
                 if filetype == 2:
-                    if read_spec_fitsio(files[i+j], spectra[i+j], settings, resid_corr = resid_corr) == 1:
+                    if read_spec_fitsio(files[i+j], spectra[i+j], settings) == 1:
                         continue
                 if filetype == 3:
                     if read_speclya_fitsio(files[i+j], spectra[i+j], settings, resid_corr = resid_corr) == 1:
                         continue
                 if settings.flux_corr == 1:
-                    apply_flux_correction(spectra[i+j], settings.flux_corr_list[i+j])
+                    if apply_flux_correction(spectra[i+j], settings.flux_corr_list[i+j], settings, resid_corr) == 1:
+                        spectra[i+j].z = 999
+                        spectra[i+j].flag = 4
+                        continue
             # Fill the l and b arrays with the coordinates of the buffer
             # and get the E(B-V) values from the dustmap
             print 'filling coordinate arrays from buffer...'

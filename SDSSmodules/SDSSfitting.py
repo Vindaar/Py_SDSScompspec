@@ -1,5 +1,7 @@
 # This module contains all the differnt continuum fitting functions
 
+import numpy as np
+
 # optimize contains the fitting function we use to fit the linear 
 # function to the log-log spectrum data
 from scipy import optimize
@@ -7,6 +9,8 @@ from linfit import linfit
 
 # copy object
 from copy import deepcopy
+
+from SDSSutilities import *
 
 
 ################################################################################

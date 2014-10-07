@@ -1,11 +1,22 @@
 # This module contains different functions to perform flux correction as
 # well as dust correction
 
+import numpy as np
+
 # fitting in flux correction
 from scipy.integrate import quad
 
 # obstools contains function to calculate E(B-V) based on Schlegel et. al dust maps
 from astropysics import obstools
+
+# contains astropy coordinate objects used to work with coordinates
+from astropy.coordinates import SkyCoord
+from astropy import units as u
+
+# fitsio based on C
+import fitsio
+
+from SDSSmodules.SDSSfiles import *
 
 # cython compiled dust_extinction routine
 # Dust extinction routine calculates the actual values for the dust correction. 
@@ -58,6 +69,10 @@ def partial_water_pressure(P, T, h):
     # 2. relative Hum defined as: h = ppW / eppW * 100
     # where ppW is the partial pressure of water in the gas, eppW the equilibrium vapor 
     # pressure of water at that pressure and temp
+    if np.isnan(P) or np.isnan(T) or np.isnan(h):
+        print P, T, h
+        import sys
+        sys.exit()
     eppW = (1.0007 + 3.46 * 10**(-6) * P) * (6.1121)*np.exp(17.502*T / (240.97 + T))
     ppW  = h * eppW / 100
     #print 'ppW:', ppW, eppW, P
@@ -104,6 +119,7 @@ def perform_flux_corr_ind_exp(spec, settings, resid_corr):
     lam = spec.wave * 10**(-10) / (10**(-6))
     reference_lam = 4000*10**(-4)
     print 'ghe'
+
     seeing_arr, altitude_arr, P_arr, T_arr, humidity_arr, snr_arr, flux_list, error_list, wave_list, loglam = get_array_from_ind_exposures(spec, settings, return_array = 1)
     ppW_arr = partial_water_pressure(P_arr, T_arr, humidity_arr)
 
@@ -238,7 +254,9 @@ def perform_flux_correction(spec, settings, resid_corr):
     # lam = wavelength in microns
     # Angstrom : 10e-10 m, micron : 10e-6 m
     lam = spec.wave * 10**(-10) / (10**(-6))
-    reference_lam = 4000*10**(-4)
+    #reference_lam = 5400*10**(-4)
+    from SDSSmodules.SDSSfiles import get_array_from_ind_exposures
+
     seeing, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings)
     spec.altitude = altitude
 
@@ -262,12 +280,12 @@ def perform_flux_correction(spec, settings, resid_corr):
         val = 206265 * ( n(lam, P, ppW, T) - n(reference_lam, P, ppW, T) ) * np.tan(Z)
         return val
 
-    delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
+    #delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     # hopefully this works!
 
     def flux_correction(delta_y):
         #print delta_y
-        func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
+        func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]
 
@@ -277,10 +295,20 @@ def perform_flux_correction(spec, settings, resid_corr):
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]        
 
-    #flux_5400 = flux_correction(calc_delta_y(4000*10**(-4), 5400*10**(-4), P, ppW, T))
+    #flux_base1 = flux_correction(calc_delta_y(4000*10**(-4), 5400*10**(-4), P, ppW, T, Z))
     flux_base = flux_correction(0)
+    #flux_base2 = flux_base()
     #print 'flux_base', flux_5400
-    flux_qso  = empty(np.size(delta_y))
+    reference_lam = 5400*10**(-4)
+    delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
+    flux_5400  = np.empty(np.size(delta_y))
+    for i in xrange(np.size(delta_y)):
+        flux_5400[i]  = flux_correction(delta_y[i])
+
+
+    reference_lam = 4000*10**(-4)
+    delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
+    flux_qso  = np.empty(np.size(delta_y))
     # the actual integratoion is done for all delta_y individually. That means we do
     # about 4500 integrations for each spectrum
     # in total 166500 * 4500 ~ 750 mio integrations. Code is very slow...!
@@ -289,7 +317,8 @@ def perform_flux_correction(spec, settings, resid_corr):
         flux_qso[i]  = flux_correction(delta_y[i])
         #print delta_y[i], i, flux_qso[i]
     #flux_qso = flux_correction(delta_y)
-    flux_corr = flux_qso / flux_base
+    flux_corr = flux_5400 / flux_qso * flux_base
+    #flux_qso / flux_base2
     
     return flux_corr
 
@@ -297,12 +326,28 @@ def perform_flux_correction(spec, settings, resid_corr):
     #flux_correction = dblquad(lambda r, theta: (1 / sigma * np.sqrt(2*np.pi))*np.exp( -r**2 / 2*sigma**2), 0, 2*np.pi, lambda x: 0, lambda x: np.sqrt(a**2 - delta_y**2 * np.sin(theta)) - delta_y * np.cos(theta))
 
 
-def apply_flux_correction(spec, correction_fits_file):
-    
-    hdu = fitsio.FITS(correction_fits_file.rstrip())
+def apply_flux_correction(spec, correction_fits_file, settings, resid_corr):
+
+    try:
+        hdu = fitsio.FITS(correction_fits_file.rstrip())
+    except ValueError:
+        return 1
+    #print correction_fits_file.rstrip()
     flux_corr = hdu[1]['corr'][:]
     spec.flux = spec.flux / flux_corr
+    #print flux_corr
     hdu.close()
+    return 0
+
+
+def apply_resid_corr(spec, resid_corr):
+    # Function not needed, if we apply the full flux correction. But for analysis purposes
+    # it might be interesting to only apply the resid correction, to see the effect it has
+    if np.size(resid_corr) > 1:
+        start_resid_corr = int((spec.beginwl - 3.5496)*1000)
+        resid_corr = resid_corr[start_resid_corr:start_resid_corr+spec.npix]
+    spec.flux       = spec.flux       / resid_corr
+    spec.flux_error = spec.flux_error / resid_corr
 
 
 ################################################################################

@@ -1,5 +1,7 @@
 # This module contains functions, which read files, txt as well as FITS
 
+import numpy as np
+
 # astropy is used to work with fits files
 from astropy.io import fits
 
@@ -15,6 +17,7 @@ from fitsio import FITS, FITSHDR
 # spec and spSpec in the filenames
 import re
 
+from SDSScorrections import *
 
 #####################################################################################
 ################################### read files ######################################
@@ -100,7 +103,7 @@ def read_speclya_fitsio(qso, spec, settings=None):
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
     # correct ivar values
-    spec.flux_error = sqrt(1/TableHDU1['ivar'][:])/TableHDU1['NOISE_CORR'][:]
+    spec.flux_error = np.sqrt(1/TableHDU1['ivar'][:])/TableHDU1['NOISE_CORR'][:]
     
     spec.model_sdss = TableHDU1['CONT'][:]
     spec.mask_comb = TableHDU1['MASK_COMB'][:]
@@ -185,7 +188,7 @@ def read_spec_fitsio(qso, spec, settings=None):
     TableHDU1 = hdu[1]
     spec.flux = TableHDU1['flux'][:]
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
-    spec.flux_error = sqrt(1/TableHDU1['ivar'][:])
+    spec.flux_error = np.sqrt(1/TableHDU1['ivar'][:])
     #    spec.model_sdss = TableHDU1['model'][:]
 
     # need to create better mask
@@ -326,7 +329,7 @@ def read_spec(qso, spec, settings = None):
 
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     # TODO: Check if need to copy data?
-    spec.flux_error = sqrt(1/TableHDU1['ivar'])
+    spec.flux_error = np.sqrt(1/TableHDU1['ivar'])
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     spec.z = hdu[2].data['Z'][0]
@@ -422,9 +425,6 @@ def read_spSpec(qso, spec, settings=None):
 ################################### additional information from FITS files ##########
 
 def get_array_from_ind_exposures(spec, settings, return_array = 0):
-    # this function reads additional information from the spec FITS files
-    # for the flux calibration. It mainly reads weather data from the 
-    # individual exposures 
 
     hdu = fitsio.FITS(spec.file)
     up  = hdu[-1].get_extnum() + 1
@@ -444,6 +444,7 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
     flux     = []
     error    = []
     wave     = []
+    spec.temp_flag = 0
     
     for i in xrange(4, up):
         header = hdu[i].read_header()
@@ -452,7 +453,20 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
         azimuth.append(float(header['AZ']))
         altitude.append(float(header['ALT']))
         humidity.append(float(header['humidity']))
-        airtemp.append(float(header['airtemp']))
+        try:
+            airtemp.append(float(header['airtemp']))
+        except ValueError:
+            try:
+                airtemp.append(float(header['temp']))
+                if np.isnan(airtemp[i-4]) == True:
+                    # in this case we set flag and assume 17.5 Celsius
+                    #print 'temp', spec.file
+                    spec.temp_flag = 1
+                    spec.T = 17.5
+            except ValueError:
+                print 'not called temp either. not available?'
+                import sys
+                sys.exit()
         wave.append(np.around(hdu[i]['loglam'][:], decimals=4))
         flux.append(hdu[i]['flux'][:])
         error.append(1/hdu[i]['ivar'][:])
@@ -473,13 +487,18 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
     altitude = np.mean(altitude_array)
     azimuth = np.mean(azimuth_array)
     P = np.mean(pressure_array)
-    T = np.mean(airtemp_array)
+    if spec.temp_flag == 0:
+        T = np.mean(airtemp_array)
+    else:
+        T = spec.T
     h = np.mean(humidity_array)
 
     # Convert pressure from Inches of Hg to HPa
     P = P * 3386.389 / 100
 
     ppW = partial_water_pressure(P, T, h)
+    if np.isnan(ppW):
+        print 'ppW', spec.file
 
     hdu.close()
 
@@ -487,9 +506,11 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
         spec.alt = altitude
         spec.az  = azimuth
         spec.P   = P
-        spec.T   = T
+        if spec.temp_flag == 0:
+            spec.T   = T
         spec.h   = h
         spec.ppW = ppW
         return seeing, altitude, P, T, ppW
     elif return_array == 1:
         return seeing_array, altitude_array, pressure_array, airtemp_array, humidity_array, snr_array, flux, error, wave, loglam
+

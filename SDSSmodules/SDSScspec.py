@@ -1,7 +1,8 @@
 # This module contains the functions, which deal with the composite spectra
 # objects. 
 
-
+import numpy as np
+from SDSSutilities import *
 
 
 ################################################################################
@@ -147,7 +148,7 @@ def statistics(cspec, spec):
             cspec.flux.append(cspec.sum[i]/cspec.nhist[i])
             cspec.flux_error.append(cspec.sum2[i]/cspec.nhist[i] - cspec.flux[i]**2)
             if cspec.nhist[i] > 1:
-                cspec.flux_error[i] = sqrt(cspec.flux_error[i]/(cspec.nhist[i] - 1))
+                cspec.flux_error[i] = np.sqrt(cspec.flux_error[i]/(cspec.nhist[i] - 1))
             else:
                 cspec.flux_error[i] = 0
         else:
