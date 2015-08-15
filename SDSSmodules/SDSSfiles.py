@@ -47,6 +47,8 @@ def check_filetype(filename):
 # simply searches for spSpec and spec in the filename 
     if re.search("spSpec", filename):
         return 1
+    elif re.search('mockspec', filename):
+        return 4
     elif re.search("speclya", filename):
         return 3
     elif re.search("spec", filename):
@@ -57,6 +59,57 @@ def check_filetype(filename):
 
 
 ################################### FITS files ######################################
+
+def read_mockspec_fitsio(qso, spec):
+
+    qso = qso.rstrip()
+    hdu = fitsio.FITS(qso)
+
+    # Coordinates:
+    TableHDU1 = hdu[1]
+    ra = TableHDU1['RA'][0]
+    dec = TableHDU1['DEC'][0]
+    spec.coordinates = SkyCoord(ra = ra*u.degree, dec = dec*u.degree, frame='fk5')
+    spec.MJD = TableHDU1['MJD'][0]
+    spec.plateid = TableHDU1['plate'][0]
+    spec.fiberid = TableHDU1['fiber'][0]
+    # Table data from HDU2; contains redshift, MJD and psf magnitudes
+    spec.z = TableHDU1['Z_VI'][0]
+    zwarn  = TableHDU1['Z_WARNING'][0]
+
+
+    # Can't find cpix in header, assume it's 1.
+    spec.cpix = 1
+    # defining hdu1 variable is faster than accessing hdu[1] each time
+    hdu2header = hdu[2].read_header()
+    spec.npix = hdu2header['NAXIS2']
+
+    TableHDU2 = hdu[2]
+    spec.flux = TableHDU2['flux'][:]
+    spec.flux_error = TableHDU2['noise'][:]
+    
+    spec.model_sdss = TableHDU2['no_abs'][:]
+    spec.wave    = 10.0**(TableHDU2['loglam'][:])
+
+#    print spec.model_sdss
+
+
+
+            
+    del(TableHDU1)
+    del(TableHDU2)
+    hdu.close()
+
+    # if zerr < 0 or zwarn != 0:
+    #     if settings is not None and settings.debug == 1:
+    #         print 'bad zerr'
+    #         print zerr, zwarn, spec.z
+    #     spec.z = 999
+    #     return 2
+
+    return 0
+    
+
 
 def read_speclya_fitsio(qso, spec, settings=None):
 
@@ -70,6 +123,7 @@ def read_speclya_fitsio(qso, spec, settings=None):
     #Open FITS file
     qso = qso.rstrip()
     hdu = fitsio.FITS(qso)
+    spec.filename = qso
 
     # Read in all necessary information from Header of
     # defining hdu0header is faster than accessing hdu[0].header each time
@@ -143,8 +197,9 @@ def read_speclya_fitsio(qso, spec, settings=None):
     hdu.close()
 
     if zerr < 0 or zwarn != 0:
-        print 'bad zerr'
-        print zerr, zwarn, spec.z
+        if settings is not None and settings.debug == 1:
+            print 'bad zerr'
+            print zerr, zwarn, spec.z
         spec.z = 999
         return 2
 
@@ -152,7 +207,7 @@ def read_speclya_fitsio(qso, spec, settings=None):
 
 
 
-def read_spec_fitsio(qso, spec, settings=None):
+def read_spec_fitsio(qso, spec, settings=None, resid_corr = None):
 
 # The same function as read_spec(), but based on fitsio, which is much faster, since
 # it's based on cfitsio
@@ -161,7 +216,7 @@ def read_spec_fitsio(qso, spec, settings=None):
     #Open FITS file
     qso = qso.rstrip()
     hdu = fitsio.FITS(qso)
-    spec.file = qso
+    spec.filename = qso
 
     # Read in all necessary information from Header of
     # defining hdu0header is faster than accessing hdu[0].header each time
@@ -189,6 +244,10 @@ def read_spec_fitsio(qso, spec, settings=None):
     spec.flux = TableHDU1['flux'][:]
     # Error is given in inverse variance. To get STD, we have to take sqrt(1/ivar)
     spec.flux_error = np.sqrt(1/TableHDU1['ivar'][:])
+    if resid_corr is not None:
+        apply_resid_corr(spec, resid_corr)
+
+    #spec.sky = TableHDU1['sky'][:]
     #    spec.model_sdss = TableHDU1['model'][:]
 
     # need to create better mask
@@ -197,6 +256,7 @@ def read_spec_fitsio(qso, spec, settings=None):
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     spec.z = hdu[2]['Z'][0]
+    print 'ok,', spec.z
     zerr   = hdu[2]['Z_ERR'][0]
     zwarn  = hdu[2]['ZWARNING'][0]
 
@@ -223,8 +283,9 @@ def read_spec_fitsio(qso, spec, settings=None):
     hdu.close()
 
     if zerr < 0 or zwarn != 0:
-        print 'bad zerr'
-        print zerr, zwarn, spec.z
+        if settings is not None and settings.debug == 1:
+            print 'bad zerr'
+            print zerr, zwarn, spec.z
         spec.z = 999
         return 2
 
@@ -424,9 +485,9 @@ def read_spSpec(qso, spec, settings=None):
 
 ################################### additional information from FITS files ##########
 
-def get_array_from_ind_exposures(spec, settings, return_array = 0):
+def get_array_from_ind_exposures(spec, settings, return_array = 0, check_weather = 0):
 
-    hdu = fitsio.FITS(spec.file)
+    hdu = fitsio.FITS(spec.filename)
     up  = hdu[-1].get_extnum() + 1
     # pressure, temperature, humidity
     header = hdu[0].read_header()
@@ -436,7 +497,8 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
 
     altitude = []
     azimuth  = []
-    seeing   = []
+    seeing50 = []
+    seeing80 = []
     pressure = []
     airtemp  = []
     humidity = []
@@ -446,10 +508,19 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
     wave     = []
     spec.temp_flag = 0
     
+    print 'up',up
     for i in xrange(4, up):
+        print 'does this happen?'
         header = hdu[i].read_header()
-        seeing.append(float(header['SEEING50']))
-        pressure.append(float(header['pressure']))
+        seeing50.append(float(header['SEEING50']))
+        seeing80.append(float(header['SEEING80']))
+        if check_weather == 1:
+            try:
+                pressure.append(float(header['pressure']))
+            except ValueError:
+                raise ValueError('No weather data found in file!')
+        else:
+            pressure.append(float(header['pressure']))
         azimuth.append(float(header['AZ']))
         altitude.append(float(header['ALT']))
         humidity.append(float(header['humidity']))
@@ -472,18 +543,19 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
         error.append(1/hdu[i]['ivar'][:])
         snr.append(np.mean(flux[-1]/error[-1]))
 
-
-    seeing_array = np.asarray(seeing)
+    seeing50_array = np.asarray(seeing50)
+    seeing80_array = np.asarray(seeing80)
     altitude_array = np.asarray(altitude)
     azimuth_array  = np.asarray(altitude)
     pressure_array = np.asarray(pressure)
-    airtemp_array = np.asarray(airtemp)
+    airtemp_array  = np.asarray(airtemp)
     humidity_array = np.asarray(humidity)
     snr_array      = np.asarray(snr)
-
+    
     loglam = hdu[1]['loglam'][:]
 
-    seeing = np.mean(seeing_array)
+    seeing50 = np.mean(seeing50_array)
+    seeing80 = np.mean(seeing80_array)
     altitude = np.mean(altitude_array)
     azimuth = np.mean(azimuth_array)
     P = np.mean(pressure_array)
@@ -491,14 +563,13 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
         T = np.mean(airtemp_array)
     else:
         T = spec.T
-    h = np.mean(humidity_array)
 
+    h = np.mean(humidity_array)
     # Convert pressure from Inches of Hg to HPa
     P = P * 3386.389 / 100
-
     ppW = partial_water_pressure(P, T, h)
     if np.isnan(ppW):
-        print 'ppW', spec.file
+        print 'ppW', spec.filename
 
     hdu.close()
 
@@ -510,7 +581,7 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0):
             spec.T   = T
         spec.h   = h
         spec.ppW = ppW
-        return seeing, altitude, P, T, ppW
+        return seeing50, seeing80, altitude, P, T, ppW
     elif return_array == 1:
-        return seeing_array, altitude_array, pressure_array, airtemp_array, humidity_array, snr_array, flux, error, wave, loglam
+        return seeing50_array, seeing80_array, altitude_array, pressure_array, airtemp_array, humidity_array, snr_array, flux, error, wave, loglam
 

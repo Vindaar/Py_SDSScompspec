@@ -7,8 +7,16 @@
 
 from copy import deepcopy
 import sys
-from SDSSmodules import *
-from SDSSclasses import spectrum
+#from SDSSmodules.SDSSfiles import check_filetype
+#from SDSSmodules.SDSSclasses import spectrum
+from SDSSmodules.SDSSfiles import *
+from SDSSmodules.SDSSfitting import *
+from SDSSmodules.SDSScorrections import *
+from SDSSmodules.SDSSoutput import *
+from SDSSmodules.SDSScspec import *
+from SDSSmodules.SDSSutilities import *
+from SDSSmodules.SDSSclasses import *
+
 import numpy as np
 #from astropy.io import FITS
 import fitsio
@@ -79,97 +87,119 @@ class WorkOnSpectrum:
             read_spec_fitsio(self.filelist[self.i].rstrip(), spec, None)
         if self.filetype == 3:
             read_speclya_fitsio(self.filelist[self.i].rstrip(), spec, None)
-        # dust correction related properties
-        spec.Ebv = obstools.get_SFD_dust(spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg, self.dustmap, interpolate=0)
-        spec.filename = filename
-        Gal_extinction_correction(spec)
-        # perform the fit. 1st with medians 2nd with individual points
-                
-        spec_median = deepcopy(spec)
+            
 
-        emfree = np.array([1280.0,1312.0,1345.0,1440.0,1610])
-        emfree_end = np.array([1292.0,1328.0,1365.0,1475.0,1790])
-        spec.emfree = (1.0 + spec.z)*emfree
-        spec.emfree_end = (1.0 + spec.z)*emfree_end
-        print spec.emfree
-        
-        zem_index = calc_zem_index(spec.z, z_min, z_delta)
-        print 'zem_index:', zem_index
-        if zem_index == -1:
-            zem_index = 0
-        x_ind, y_ind, y_err_ind = fit_powerlaw_individual(spec, self.settings, 1, zem_index = zem_index, deviation_factor=5.0)
-        #x_med, y_med, y_err_med = fit_powerlaw_times_basespec(spec_median, self.settings, return_data = 1, zem_index = zem_index)
-        #x_med, y_med, y_err_med = fit_powerlaw_plus_compspec(spec_median, self.settings, return_data = 1, zem_index = zem_index)
-#        x_med, y_med, y_err_med = fit_powerlaw(spec_median, 1)
-        
-        # clear plot from before and write labels
-        self.axarr[0].clear()
-        self.axarr[1].clear()
-        self.axarr[0].set_xlabel('Wavelength / Angstrom')
-        self.axarr[0].set_ylabel('Flux')
+        # check whether redshift is not 999. If it is, we go to the next spectrum
+        if spec.z == 999:
+            print 'Bad redshift. Skip spectrum'
+            if self.i < self.nspec:
+                self.i += 1
+                self.work_on_spectrum(self.filelist[self.i])
+            else:
+                plt.close()
+                print 'reached last spectrum in file'
+                self.disconnect()
+        else:
+            # dust correction related properties
+            spec.Ebv = obstools.get_SFD_dust(spec.coordinates.galactic.l.deg, spec.coordinates.galactic.b.deg, self.dustmap, interpolate=0)
+            spec.filename = filename.rstrip()
+            Gal_extinction_correction(spec)
+            # perform the fit. 1st with medians 2nd with individual points
 
+            spec_median = deepcopy(spec)
 
-        size = np.size(spec_median.powerlaw)
-#        print np.shape(spec.wave), np.shape(spec_median.powerlaw[0:size])
-        # plot spectrum
-        flux_means = smooth_array(spec.flux, 25, spec.flux_error)
-        # ly alpha:
-        ind = np.where(spec.wave/(1.0+spec.z) < 1200)[0]
-        flux_lya   = smooth_array(spec.flux[ind], 100, spec.flux_error[ind])
-        #        flux_lya   = smooth_array(flux_lya[ind], 5, spec.flux_error[ind])
+            emfree = np.array([1280.0,1312.0,1345.0,1440.0,1610])
+            emfree_end = np.array([1292.0,1328.0,1365.0,1475.0,1790])
+            spec.emfree = (1.0 + spec.z)*emfree
+            spec.emfree_end = (1.0 + spec.z)*emfree_end
+            
+            zem_index = calc_zem_index(spec.z, z_min, z_delta)
+            print 'zem_index:', zem_index
+            if zem_index == -1:
+                zem_index = 0
+            x_ind, y_ind, y_err_ind = fit_powerlaw_individual(spec, self.settings, 1, zem_index = zem_index, deviation_factor=5.0)
+            #x_med, y_med, y_err_med = fit_powerlaw_times_basespec(spec_median, self.settings, return_data = 1, zem_index = zem_index)
+            #x_med, y_med, y_err_med = fit_powerlaw_plus_compspec(spec_median, self.settings, return_data = 1, zem_index = zem_index)
+            #x_med, y_med, y_err_med = fit_powerlaw(spec_median, 1)
+            
+            # clear plot from before and write labels
+            self.axarr[0].clear()
+            self.axarr[1].clear()
+            self.axarr[0].set_xlabel('Wavelength / Angstrom')
+            self.axarr[0].set_ylabel('Flux')
 
-        flux_corr = perform_flux_correction(spec, self.settings, self.resid_corr)
-        flux_corrected = spec.flux / flux_corr
-        #flux_corr_ind = perform_flux_corr_ind_exp(spec_median, self.settings, self.resid_corr)
-        #flux_corrected_ind = spec_median.flux / flux_corr_ind
-        spec_median.flux = flux_corrected
-        x_med, y_med, y_err_med = fit_powerlaw_individual(spec_median, self.settings, 1, zem_index = zem_index, deviation_factor=5.0)
+            size = np.size(spec_median.powerlaw)
+    #        print np.shape(spec.wave), np.shape(spec_median.powerlaw[0:size])
+            # plot spectrum
+            flux_means = smooth_array(spec.flux, 25, spec.flux_error)
+            # ly alpha:
+            ind = np.where(spec.wave/(1.0+spec.z) < 1200)[0]
+            flux_lya   = smooth_array(spec.flux[ind], 100, spec.flux_error[ind])
+            #        flux_lya   = smooth_array(flux_lya[ind], 5, spec.flux_error[ind])
+            flux_corr = perform_flux_correction(spec, self.settings, self.resid_corr)
+            corr_4000 = flux_corr[0]
+            corr_5400 = flux_corr[1]
+            flux_corr = corr_5400 / corr_4000
+            flux_corrected = spec.flux * corr_5400 / corr_4000
 
+            #flux_corr_ind = perform_flux_corr_ind_exp(spec_median, self.settings, self.resid_corr)
+            #flux_corrected_ind = spec_median.flux / flux_corr_ind
 
-        self.axarr[0].plot(spec.wave, spec.flux, 'r-', linewidth=0.5)
-        #self.axarr[0].plot(spec.wave, flux_means, 'k-')
-        #self.axarr[0].plot(spec.wave[ind], flux_lya, 'c-')
-        # plot spectrum continuum PCA model
-        #self.axarr[0].plot(spec.wave, spec.model_sdss, 'g-')
-        # flux corrected spectrum
-        self.axarr[0].plot(spec.wave, flux_corrected, 'g-', linewidth=0.5)
-        #self.axarr[0].plot(spec.wave, flux_corrected_ind, 'b-', linewidth=0.5)
-        # plot spectrum error
-        self.axarr[0].plot(spec.wave, spec.flux_error, 'b-')
-        # plot fit_powerlaw_individual
-        self.axarr[0].plot(spec.wave, spec.powerlaw,'m-', linewidth=2.5)
-        # plot fit_powerlaw
-        self.axarr[0].plot(spec.wave, spec_median.powerlaw, linewidth=1, color = 'orange')
-        # plot fit_powerlaw_ind data
+            ########################################
+            ### WARNING: Since this program was originally intended to
+            ### plot different fitting algorithms, the spcetrum
+            ### spec_median is now abused to contain the flux_corrected spectrum!!!
+            ########################################
 
-        # for i in xrange(np.size(emfree)):
-        #     self.axarr[0].axvline(spec.emfree[i], ymin=0, ymax=1, linewidth=1, color='c')
-        # for i in xrange(np.size(emfree_end)):
-        #     self.axarr[0].axvline(spec.emfree_end[i], ymin=0, ymax=1, linewidth=1, color='orange')
-        #        print y_ind
-        #        print y_err_ind
-        #self.axarr[1].errorbar(10**(x_ind), y_err_ind, xerr=0, elinewidth=2.5, fmt='c', markersize=5, marker='x')#, linestyle='None')
-        self.axarr[1].plot(spec.wave, spec.flux - flux_corrected, 'r')
-        self.axarr[1].plot(spec.wave, flux_corr, 'b')
-        #self.axarr[1].plot(spec.wave, flux_corr_ind, 'g')
-        #self.axarr[0].errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='x')#, linestyle='None')
-        # plot fit_powerlaw
-        #self.axarr[0].errorbar(10**(x_med), 10**(y_med), xerr=0, yerr=10**(y_med)*y_err_med, elinewidth=2.5, fmt='k', markersize=3, marker='x', linestyle='None')
-        # set title
-        filename   = str(spec.filename) + '    '
-        zem_str    = 'zem: ' + "{0:.5f}".format(float(spec.z)) + '    ' + 'Alt: ' + "{0:.4}".format(float(spec.altitude)) + '\n'
-        individual = 'alpha_ind: ' + "{0:.5f}".format(spec.alpha) + '    ' + 'chisq_ind: ' + "{0:.5f}".format(spec.chisq) + '\n'
-        median     = 'alpha_med: ' + "{0:.5f}".format(spec_median.alpha) + '    ' + 'chisq_med: ' + "{0:.5f}".format(spec_median.chisq)
-        title = filename + zem_str + individual + median
+            spec_median.flux = flux_corrected
+            x_med, y_med, y_err_med = fit_powerlaw_individual(spec_median, self.settings, 1, zem_index = zem_index, deviation_factor=5.0)
 
-        self.axarr[0].set_title(title)
-        self.axarr[0].set_xlim(3600, 10000)
-#        self.axarr[0].set_ylim(-1/4.0*np.max(spec.flux[50:-50]), np.max(spec.flux[50:-50]))
-        print np.min(spec.flux), np.max(spec.flux)
-        print np.where(spec.flux == np.max(spec.flux))[0]
-        # show plot
+            self.axarr[0].plot(spec.wave, spec.flux, 'r-', linewidth=0.5)
+            #self.axarr[0].plot(spec.wave, flux_means, 'k-')
+            #self.axarr[0].plot(spec.wave[ind], flux_lya, 'c-')
+            # plot spectrum continuum PCA model
+            #self.axarr[0].plot(spec.wave, spec.model_sdss, 'g-')
+            # flux corrected spectrum
+            self.axarr[0].plot(spec.wave, flux_corrected, 'g-', linewidth=0.5)
+            #self.axarr[0].plot(spec.wave, flux_corrected_ind, 'b-', linewidth=0.5)
+            # plot spectrum error
+            self.axarr[0].plot(spec.wave, spec.flux_error, 'b-')
+            # plot fit_powerlaw_individual
+            self.axarr[0].plot(spec.wave, spec.powerlaw,'m-', linewidth=2.5)
+            # plot fit_powerlaw
+            self.axarr[0].plot(spec.wave, spec_median.powerlaw, linewidth=1, color = 'orange')
+            # plot fit_powerlaw_ind data
 
-        plt.draw()
+            # for i in xrange(np.size(emfree)):
+            #     self.axarr[0].axvline(spec.emfree[i], ymin=0, ymax=1, linewidth=1, color='c')
+            # for i in xrange(np.size(emfree_end)):
+            #     self.axarr[0].axvline(spec.emfree_end[i], ymin=0, ymax=1, linewidth=1, color='orange')
+            #        print y_ind
+            #        print y_err_ind
+            #self.axarr[1].errorbar(10**(x_ind), y_err_ind, xerr=0, elinewidth=2.5, fmt='c', markersize=5, marker='x')#, linestyle='None')
+            self.axarr[1].plot(spec.wave, spec.flux - flux_corrected, 'r')
+            self.axarr[1].plot(spec.wave, flux_corr, 'b')
+            self.axarr[1].plot(spec.wave, corr_4000, 'green')
+            self.axarr[1].plot(spec.wave, corr_5400, 'orange')
+            #self.axarr[1].plot(spec.wave, flux_corr_ind, 'g')
+            #self.axarr[0].errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='x')#, linestyle='None')
+            # plot fit_powerlaw
+            #self.axarr[0].errorbar(10**(x_med), 10**(y_med), xerr=0, yerr=10**(y_med)*y_err_med, elinewidth=2.5, fmt='k', markersize=3, marker='x', linestyle='None')
+            # set title
+            filename   = str(spec.filename) + '    '
+            zem_str    = 'zem: ' + "{0:.5f}".format(float(spec.z)) + '    ' + 'Alt: ' + "{0:.4}".format(float(spec.altitude)) + '\n'
+            individual = 'alpha_ind: ' + "{0:.5f}".format(spec.alpha) + '    ' + 'chisq_ind: ' + "{0:.5f}".format(spec.chisq) + '\n'
+            median     = 'alpha_med: ' + "{0:.5f}".format(spec_median.alpha) + '    ' + 'chisq_med: ' + "{0:.5f}".format(spec_median.chisq)
+            title = filename + zem_str + individual + median
+
+            self.axarr[0].set_title(title)
+            self.axarr[0].set_xlim(3600, 10000)
+#            self.axarr[0].set_ylim(-1/4.0*np.max(spec.flux[50:-50]), np.max(spec.flux[50:-50]))
+            print np.min(spec.flux), np.max(spec.flux)
+            print np.where(spec.flux == np.max(spec.flux))[0]
+            # show plot
+
+            plt.draw()
 
     def disconnect(self):
         self.fig.canvas.mpl_disconnect(self.cidpress)

@@ -72,7 +72,7 @@ def partial_water_pressure(P, T, h):
     if np.isnan(P) or np.isnan(T) or np.isnan(h):
         print P, T, h
         import sys
-        sys.exit()
+        sys.exit('ERROR in partial_water_pressure(): Pressure, temperature and humidity values all NAN. Something bad happened before!!')
     eppW = (1.0007 + 3.46 * 10**(-6) * P) * (6.1121)*np.exp(17.502*T / (240.97 + T))
     ppW  = h * eppW / 100
     #print 'ppW:', ppW, eppW, P
@@ -236,8 +236,7 @@ def perform_flux_corr_ind_exp(spec, settings, resid_corr):
 
 
 
-def perform_flux_correction(spec, settings, resid_corr):
-
+def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check_weather = 0):
     # First start with residual correction for Balmer problem
     # resid_corr array starts from wavelength 10**(3.5496)
     if np.size(resid_corr) > 1:
@@ -257,9 +256,11 @@ def perform_flux_correction(spec, settings, resid_corr):
     #reference_lam = 5400*10**(-4)
     from SDSSmodules.SDSSfiles import get_array_from_ind_exposures
 
-    seeing, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings)
+    #try:
+    seeing50, seeing80, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings, check_weather=check_weather)
+    #except ValueError:
+    #    raise ValueError('No weather data was found!')
     spec.altitude = altitude
-
     def n(x, P, ppW, T):
         # refractivity of atmosphere based on wavelength, pressure, partial water pressure and temperature
         # Marini, J.W., NASA Technical Report X-591-73-351, (1973). 
@@ -272,55 +273,91 @@ def perform_flux_correction(spec, settings, resid_corr):
         return val
 
     # zenith angle in radian
-    Z = (90 - altitude)*2*np.pi / 360
+    Z = (90.0 - altitude)*2*np.pi / 360.0
     # sigma from seeing
-    sigma = seeing / (2*np.sqrt(2 * np.log(2)))
+    #seeing = 0.1
+    if seeing == 'seeing50':
+        sigma = seeing50 / (2*np.sqrt(2 * np.log(2)))
+    elif seeing == 'seeing80':
+        sigma = seeing80 / (2*np.sqrt(2 * np.log(2)))
+    #print 2*np.sqrt(2*np.log(2))
+    #print 'seeing is: ', seeing, sigma
+    #sigma = sigma * 
+    
+    # test sigma influence
+    #sigma = 0.2
 
     def calc_delta_y(lam, reference_lam, P, ppW, T, Z):
         val = 206265 * ( n(lam, P, ppW, T) - n(reference_lam, P, ppW, T) ) * np.tan(Z)
         return val
 
-    #delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
+    # delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     # hopefully this works!
-
     def flux_correction(delta_y):
         #print delta_y
+        #R = np.sqrt((a**2 - delta_y**2 + 2*delta_y*np.sin(0)*(delta_y*np.sin(0) + np.sqrt(a**2 + delta_y**2*(np.sin(0)**2 - 1)))))
+        #print 'R', R, sigma, a, delta_y
         func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]
 
     def flux_base():
         #print delta_y
-        func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(x)/(2*sigma**2)))
+        # is weird
+        func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2)/(2*sigma**2)))
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]        
 
+
     #flux_base1 = flux_correction(calc_delta_y(4000*10**(-4), 5400*10**(-4), P, ppW, T, Z))
-    flux_base1 = flux_correction(0)
-    flux_base2 = flux_base()
     #print 'flux_base', flux_5400
     reference_lam = 5400*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
+    delta_y_5400 = delta_y
+    print 'delta y should be :', delta_y
+
+    # change radius of fiber artificially to check calc
+    #a = 2*sigma
+    #print 'a', a
+
+    flux_base1 = flux_correction(0)
+    flux_base2 = flux_base()
+    #print 'delta 0', flux_base1, flux_base2
+
+    print 'delta', min(delta_y), max(delta_y)
     flux_5400  = np.empty(np.size(delta_y))
     for i in xrange(np.size(delta_y)):
         flux_5400[i]  = flux_correction(delta_y[i])
+        # if flux_5400[i] < 0.9:
+        # #if flux_5400[i] < 0.999 and flux_5400[i] > 0.9985:
+        #    print 'flux5400', flux_5400[i], delta_y[i]
 
 
     reference_lam = 4000*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
-    flux_qso  = np.empty(np.size(delta_y))
+    delta_y_4000 = delta_y
+    flux_4000  = np.empty(np.size(delta_y))
     # the actual integratoion is done for all delta_y individually. That means we do
     # about 4500 integrations for each spectrum
     # in total 166500 * 4500 ~ 750 mio integrations. Code is very slow...!
     # write in C?
     for i in xrange(np.size(delta_y)):
-        flux_qso[i]  = flux_correction(delta_y[i])
+        flux_4000[i]  = flux_correction(delta_y[i])
+        #if flux_qso[i] < 0.9:
+        #if flux_qso[i] < 0.999 and flux_qso[i] > 0.9985:
+            #print 'flux4000', flux_qso[i], delta_y[i]
         #print delta_y[i], i, flux_qso[i]
     #flux_qso = flux_correction(delta_y)
     #flux_corr = flux_qso * flux_5400) #/ flux_base1# / flux_base2
     #flux_qso / flux_base2
-    
-    return flux_qso, flux_5400, flux_base2
+    #flux_5400 = flux_5400 / flux_base1
+    #flux_qso = flux_qso / flux_base1
+
+    # with the returned arrays, what we're going to do is the following:
+    # multiply the spectrum by flux_5400 to revert the 'wrongly calibrated spectrum' to 
+    # something resembling an uncalibrated spectrum
+    # and then divide by flux_4000 to get a properly corrected spectrum
+    return flux_4000, flux_5400, flux_base2
 
 
     #flux_correction = dblquad(lambda r, theta: (1 / sigma * np.sqrt(2*np.pi))*np.exp( -r**2 / 2*sigma**2), 0, 2*np.pi, lambda x: 0, lambda x: np.sqrt(a**2 - delta_y**2 * np.sin(theta)) - delta_y * np.cos(theta))

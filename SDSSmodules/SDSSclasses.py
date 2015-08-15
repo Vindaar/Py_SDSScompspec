@@ -137,9 +137,12 @@ class coordinate_arrays:
 
 class program_settings:
     def __init__(self):
+        self.debug            = 0
         self.dust             = 0
         self.nprocs           = 8
         self.program_name     = 'PyS_SDSScompspec'
+        self.predict_from_mlp = False
+        self.saved_ann        = ''
         self.inputfile        = ''
         self.outfile          = ''
         self.outfile_basis    = ''

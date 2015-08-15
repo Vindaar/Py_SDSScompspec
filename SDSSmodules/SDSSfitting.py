@@ -446,7 +446,6 @@ def fit_powerlaw_plus_compspec(spec, settings, compspec_flux = 0, return_data = 
     # if we don't have 2 usable regions, set everything to 0
     else:
         # Currently leave those values at -999. Seems to be same as in C code then.
-        print 'afasddf'
         spec.powerlaw = np.zeros(spec.npix)
         # Think about if 0 is a good value (currently checked in build_compspec)
 
@@ -556,6 +555,7 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
         # include wave_em variables!!!
         wave_start = int(wave_em_interval_start)
         wave_end   = int(wave_em_interval_end)
+        print wave_start, wave_end
         index = np.where(np.logical_and(flux > 0, flux_error > 0, np.isposinf(flux_error) == False))[0]
         index = np.extract((wave_start <= index) & (index <= wave_end), index)
 
@@ -564,6 +564,7 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
         if np.size(index) == 0:
             continue
         keep_indices = drop_data_from_intervals(wave, flux, flux_error, index, deviation_factor)
+        print keep_indices
 
         int_length = np.size(keep_indices)
         interval_index = np.arange(int_length)
@@ -647,7 +648,6 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
         del(flux_error_log)
     if return_data == 1:
         return wave_log, flux_log, flux_error_log
-
 
     spec.normalized = spec.flux / spec.powerlaw
     del(flux_temp)
