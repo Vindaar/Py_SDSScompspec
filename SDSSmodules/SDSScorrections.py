@@ -324,7 +324,7 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         # print 'R', R, sigma, a, delta_y
         func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
         flux_corr = quad(func, 0, 2*np.pi)
-        return flux_corr
+        return flux_corr[0]
 
     def flux_base():
         #print delta_y
