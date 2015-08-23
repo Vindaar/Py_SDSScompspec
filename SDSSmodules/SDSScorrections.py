@@ -336,19 +336,19 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     flux_base1 = flux_correction(0)
     flux_base2 = flux_base()
 
-    # calculate the correction for the center at 5400 Å
+    # calculate the correction for the center at 5400 A
     reference_lam = 5400*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     delta_y_5400 = delta_y
     flux_5400  = np.empty(np.size(delta_y))
-    if flux_2d == True:
+    if perform_2d == True:
         for i in xrange(np.size(delta_y)):
             flux_5400[i]  = flux_correction_2d(delta_y[i])
     else:
         for i in xrange(np.size(delta_y)):
             flux_5400[i]  = flux_correction(delta_y[i])
 
-    # calculate the correction for the center at 4000 Å
+    # calculate the correction for the center at 4000 A
     reference_lam = 4000*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     delta_y_4000 = delta_y
@@ -358,7 +358,7 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     # about 4500 integrations for each spectrum
     # in total 166500 * 4500 ~ 750 mio integrations. Code is very slow...!
     # write in C?
-    if flux_2d == True:
+    if perform_2d == True:
         for i in xrange(np.size(delta_y)):
             flux_4000[i]  = flux_correction_2d(delta_y[i])
     else:
