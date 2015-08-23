@@ -5,6 +5,8 @@ import numpy as np
 
 # fitting in flux correction
 from scipy.integrate import quad
+from scipy.integrate import dblquad
+from scipy.integrate import nquad
 
 # obstools contains function to calculate E(B-V) based on Schlegel et. al dust maps
 from astropysics import obstools
@@ -17,6 +19,11 @@ from astropy import units as u
 import fitsio
 
 from SDSSmodules.SDSSfiles import *
+
+
+# try to use numba to JIT the integration for the flux correction
+# from numba import jit
+# import llvm.core as lc
 
 # cython compiled dust_extinction routine
 # Dust extinction routine calculates the actual values for the dust correction. 
@@ -66,6 +73,7 @@ def partial_water_pressure(P, T, h):
     # 1. calculate equilibrium vapor pressure of water at pressure P and temp T
     # based on Buck 1981
     # http://www.public.iastate.edu/~bkh/teaching/505/arden_buck_sat.pdf 24.09.14
+    # first eq. of eq. 8
     # 2. relative Hum defined as: h = ppW / eppW * 100
     # where ppW is the partial pressure of water in the gas, eppW the equilibrium vapor 
     # pressure of water at that pressure and temp
@@ -236,7 +244,7 @@ def perform_flux_corr_ind_exp(spec, settings, resid_corr):
 
 
 
-def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check_weather = 0):
+def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check_weather = 0, perform_2d = True):
     # First start with residual correction for Balmer problem
     # resid_corr array starts from wavelength 10**(3.5496)
     if np.size(resid_corr) > 1:
@@ -275,31 +283,48 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     # zenith angle in radian
     Z = (90.0 - altitude)*2*np.pi / 360.0
     # sigma from seeing
-    #seeing = 0.1
     if seeing == 'seeing50':
         sigma = seeing50 / (2*np.sqrt(2 * np.log(2)))
     elif seeing == 'seeing80':
         sigma = seeing80 / (2*np.sqrt(2 * np.log(2)))
-    #print 2*np.sqrt(2*np.log(2))
-    #print 'seeing is: ', seeing, sigma
-    #sigma = sigma * 
     
-    # test sigma influence
-    #sigma = 0.2
-
     def calc_delta_y(lam, reference_lam, P, ppW, T, Z):
         val = 206265 * ( n(lam, P, ppW, T) - n(reference_lam, P, ppW, T) ) * np.tan(Z)
         return val
 
     # delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     # hopefully this works!
+    #@jit
+    def flux_correction_2d(delta_y):
+        # now we introduce the integration in such a way as to integrate over the 2D fiber
+        # incl. r. Need to perform substitution from r to r', such that r' is the distance
+        # from the center of the flux to any given point within the fiber
+        # r_prime_2: r'^2
+        # dr_by_dr_prime = dr / dr'. Jacobian of substitution
+        def integrand(r, theta):
+            # integrand is the integrand of the function which will be 2D integrated
+            r_prime_2      = r**2 + delta_y**2 - 2*r*delta_y*np.cos(3.0/2.0*np.pi - theta)
+            #r_prime        = np.sqrt(r_prime_2)
+            #dr_by_dr_prime = (2*r - 2*delta_y*np.cos(3.0/2.0*np.pi - theta))**(-1.0)
+            #R_prime        = np.sqrt(a**2 + delta_y**2 - 2*a*delta_y*np.cos(3.0/2.0*np.pi - theta))
+            #value          = 1/(sigma**2)*np.exp(-r_prime_2/(2*sigma**2))*r_prime*dr_by_dr_prime
+            value          = 1/(2*np.pi*sigma**2)*np.exp(-r_prime_2/(2*sigma**2))*r
+            return value
+        flux_corr = dblquad(integrand, 
+                            0.0,
+                            2.0*np.pi,
+                            lambda theta: 0.0,
+                            lambda theta: a
+        )
+        flux_corr = flux_corr[0]
+        return flux_corr
+
     def flux_correction(delta_y):
-        #print delta_y
-        #R = np.sqrt((a**2 - delta_y**2 + 2*delta_y*np.sin(0)*(delta_y*np.sin(0) + np.sqrt(a**2 + delta_y**2*(np.sin(0)**2 - 1)))))
-        #print 'R', R, sigma, a, delta_y
+        # R = np.sqrt((a**2 - delta_y**2 + 2*delta_y*np.sin(0)*(delta_y*np.sin(0) + np.sqrt(a**2 + delta_y**2*(np.sin(0)**2 - 1)))))
+        # print 'R', R, sigma, a, delta_y
         func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
         flux_corr = quad(func, 0, 2*np.pi)
-        return flux_corr[0]
+        return flux_corr
 
     def flux_base():
         #print delta_y
@@ -308,60 +333,46 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]        
 
+    flux_base1 = flux_correction(0)
+    flux_base2 = flux_base()
 
-    #flux_base1 = flux_correction(calc_delta_y(4000*10**(-4), 5400*10**(-4), P, ppW, T, Z))
-    #print 'flux_base', flux_5400
+    # calculate the correction for the center at 5400 Å
     reference_lam = 5400*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     delta_y_5400 = delta_y
-    print 'delta y should be :', delta_y
-
-    # change radius of fiber artificially to check calc
-    #a = 2*sigma
-    #print 'a', a
-
-    flux_base1 = flux_correction(0)
-    flux_base2 = flux_base()
-    #print 'delta 0', flux_base1, flux_base2
-
-    print 'delta', min(delta_y), max(delta_y)
     flux_5400  = np.empty(np.size(delta_y))
-    for i in xrange(np.size(delta_y)):
-        flux_5400[i]  = flux_correction(delta_y[i])
-        # if flux_5400[i] < 0.9:
-        # #if flux_5400[i] < 0.999 and flux_5400[i] > 0.9985:
-        #    print 'flux5400', flux_5400[i], delta_y[i]
+    if flux_2d == True:
+        for i in xrange(np.size(delta_y)):
+            flux_5400[i]  = flux_correction_2d(delta_y[i])
+    else:
+        for i in xrange(np.size(delta_y)):
+            flux_5400[i]  = flux_correction(delta_y[i])
 
-
+    # calculate the correction for the center at 4000 Å
     reference_lam = 4000*10**(-4)
     delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
     delta_y_4000 = delta_y
+    assert np.count_nonzero(np.isfinite(delta_y_4000)) == spec.npix
     flux_4000  = np.empty(np.size(delta_y))
     # the actual integratoion is done for all delta_y individually. That means we do
     # about 4500 integrations for each spectrum
     # in total 166500 * 4500 ~ 750 mio integrations. Code is very slow...!
     # write in C?
-    for i in xrange(np.size(delta_y)):
-        flux_4000[i]  = flux_correction(delta_y[i])
-        #if flux_qso[i] < 0.9:
-        #if flux_qso[i] < 0.999 and flux_qso[i] > 0.9985:
-            #print 'flux4000', flux_qso[i], delta_y[i]
-        #print delta_y[i], i, flux_qso[i]
-    #flux_qso = flux_correction(delta_y)
-    #flux_corr = flux_qso * flux_5400) #/ flux_base1# / flux_base2
-    #flux_qso / flux_base2
-    #flux_5400 = flux_5400 / flux_base1
-    #flux_qso = flux_qso / flux_base1
-
+    if flux_2d == True:
+        for i in xrange(np.size(delta_y)):
+            flux_4000[i]  = flux_correction_2d(delta_y[i])
+    else:
+        for i in xrange(np.size(delta_y)):
+            flux_4000[i]  = flux_correction(delta_y[i])
     # with the returned arrays, what we're going to do is the following:
     # multiply the spectrum by flux_5400 to revert the 'wrongly calibrated spectrum' to 
     # something resembling an uncalibrated spectrum
     # and then divide by flux_4000 to get a properly corrected spectrum
+
+    assert np.count_nonzero(np.isfinite(flux_5400)) == spec.npix
+    assert np.count_nonzero(np.isfinite(flux_4000)) == spec.npix
+
     return flux_4000, flux_5400, flux_base2
-
-
-    #flux_correction = dblquad(lambda r, theta: (1 / sigma * np.sqrt(2*np.pi))*np.exp( -r**2 / 2*sigma**2), 0, 2*np.pi, lambda x: 0, lambda x: np.sqrt(a**2 - delta_y**2 * np.sin(theta)) - delta_y * np.cos(theta))
-
 
 def apply_flux_correction(spec, correction_fits_file, settings, resid_corr):
 

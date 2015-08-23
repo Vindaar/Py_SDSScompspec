@@ -508,9 +508,7 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0, check_weather
     wave     = []
     spec.temp_flag = 0
     
-    print 'up',up
     for i in xrange(4, up):
-        print 'does this happen?'
         header = hdu[i].read_header()
         seeing50.append(float(header['SEEING50']))
         seeing80.append(float(header['SEEING80']))
