@@ -555,7 +555,7 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
         # include wave_em variables!!!
         wave_start = int(wave_em_interval_start)
         wave_end   = int(wave_em_interval_end)
-        print wave_start, wave_end
+        #print wave_start, wave_end
         index = np.where(np.logical_and(flux > 0, flux_error > 0, np.isposinf(flux_error) == False))[0]
         index = np.extract((wave_start <= index) & (index <= wave_end), index)
 
@@ -564,7 +564,7 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
         if np.size(index) == 0:
             continue
         keep_indices = drop_data_from_intervals(wave, flux, flux_error, index, deviation_factor)
-        print keep_indices
+        #print keep_indices
 
         int_length = np.size(keep_indices)
         interval_index = np.arange(int_length)
@@ -618,11 +618,11 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
 
         #coeff, pcov = optimize.curve_fit(func, wave_log, flux_log, p0=(-2,5), sigma=flux_error_log, absolute_sigma=True)
 
-        print 'testtest'
+        #print 'testtest'
         coeff, pcov, redchisq = linfit(wave_log, flux_log, sigmay=flux_error_log, cov=True, chisq=True, relsigma=False, residuals=False)
         # assign coefficients to our spectrum
         spec.beta = coeff[0]
-        print coeff[0], coeff[1]
+        #print coeff[0], coeff[1]
         spec.alpha = -spec.beta - 2
         spec.delta = coeff[1]
         spec.chisq = redchisq
@@ -638,7 +638,7 @@ def fit_powerlaw_individual(spec, settings, return_data = 0, deviation_factor = 
     # if we don't have 4 usable regions, set everything to 0
     else:
         # Currently leave those values at -999. Seems to be same as in C code then.
-        print 'ok?'
+        #print 'ok?'
         spec.powerlaw = np.zeros(spec.npix)
         # Think about if 0 is a good value (currently checked in build_compspec)
 

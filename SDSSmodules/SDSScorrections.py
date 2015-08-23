@@ -24,6 +24,11 @@ from SDSSmodules.SDSSfiles import *
 # try to use numba to JIT the integration for the flux correction
 # from numba import jit
 # import llvm.core as lc
+# SINCE this is not working, we use ctypes to use a compiled function (the integrand)
+# of the integration
+import ctypes
+
+
 
 # cython compiled dust_extinction routine
 # Dust extinction routine calculates the actual values for the dust correction. 
@@ -244,6 +249,7 @@ def perform_flux_corr_ind_exp(spec, settings, resid_corr):
 
 
 
+#@profile
 def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check_weather = 0, perform_2d = True):
     # First start with residual correction for Balmer problem
     # resid_corr array starts from wavelength 10**(3.5496)
@@ -292,9 +298,18 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         val = 206265 * ( n(lam, P, ppW, T) - n(reference_lam, P, ppW, T) ) * np.tan(Z)
         return val
 
-    # delta_y = calc_delta_y(lam, reference_lam, P, ppW, T, Z)
-    # hopefully this works!
+
+    ########################################
+    # Now we first load the C library:
+    lib = ctypes.CDLL('/home/basti/SDSS_indie/Python/develop/2D_gaussian_integration_flux_correction.so')
+    integrand_c = lib.f
+    integrand_c.restype  = ctypes.c_double
+    integrand_c.argtypes = (ctypes.c_int, ctypes.c_double)
+
+
+
     #@jit
+    @profile
     def flux_correction_2d(delta_y):
         # now we introduce the integration in such a way as to integrate over the 2D fiber
         # incl. r. Need to perform substitution from r to r', such that r' is the distance
@@ -310,11 +325,20 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
             #value          = 1/(sigma**2)*np.exp(-r_prime_2/(2*sigma**2))*r_prime*dr_by_dr_prime
             value          = 1/(2*np.pi*sigma**2)*np.exp(-r_prime_2/(2*sigma**2))*r
             return value
-        flux_corr = dblquad(integrand, 
+        # now we use the C library instead!!!
+        # flux_corr = dblquad(integrand, 
+        #                     0.0,
+        #                     2.0*np.pi,
+        #                     lambda theta: 0.0,
+        #                     lambda theta: a,
+        # )
+
+        flux_corr = dblquad(integrand_c, 
                             0.0,
                             2.0*np.pi,
                             lambda theta: 0.0,
-                            lambda theta: a
+                            lambda theta: a,
+                            args=(delta_y, sigma)
         )
         flux_corr = flux_corr[0]
         return flux_corr
@@ -368,9 +392,14 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     # multiply the spectrum by flux_5400 to revert the 'wrongly calibrated spectrum' to 
     # something resembling an uncalibrated spectrum
     # and then divide by flux_4000 to get a properly corrected spectrum
-
-    assert np.count_nonzero(np.isfinite(flux_5400)) == spec.npix
-    assert np.count_nonzero(np.isfinite(flux_4000)) == spec.npix
+    
+    if perform_2d == True:
+        # if perform_2d == False, then we use the 1D correction
+        # IMPORTANT: in that case, the calculation might break at a certain delta_y, that is because
+        # the integration only works, as long as the center wavelength is inside the
+        # fiber. That is delta_y < fiber radius
+        assert np.count_nonzero(np.isfinite(flux_5400)) == spec.npix
+        assert np.count_nonzero(np.isfinite(flux_4000)) == spec.npix
 
     return flux_4000, flux_5400, flux_base2
 
