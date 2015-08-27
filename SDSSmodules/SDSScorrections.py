@@ -248,9 +248,9 @@ def perform_flux_corr_ind_exp(spec, settings, resid_corr):
     #flux_correction = dblquad(lambda r, theta: (1 / sigma * np.sqrt(2*np.pi))*np.exp( -r**2 / 2*sigma**2), 0, 2*np.pi, lambda x: 0, lambda x: np.sqrt(a**2 - delta_y**2 * np.sin(theta)) - delta_y * np.cos(theta))
 
 
-
-#@profile
 def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check_weather = 0, perform_2d = True):
+    c_integration_flag = True
+
     # First start with residual correction for Balmer problem
     # resid_corr array starts from wavelength 10**(3.5496)
     if np.size(resid_corr) > 1:
@@ -301,15 +301,35 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
 
     ########################################
     # Now we first load the C library:
-    lib = ctypes.CDLL('/home/basti/SDSS_indie/Python/develop/2D_gaussian_integration_flux_correction.so')
-    integrand_c = lib.f
-    integrand_c.restype  = ctypes.c_double
-    integrand_c.argtypes = (ctypes.c_int, ctypes.c_double)
-
-
+    # the C library is compiled by:
+    # gcc -shared -o <name>.so -fPIC <name>.c
+    if perform_2d == True:
+        try:
+            path_2D_lib = '/home/basti/SDSS_indie/Python/develop/2D_gaussian_integration_flux_correction.so'
+            lib_2D = ctypes.CDLL(path_2D_lib)
+        except OSError as err:
+            # file could not be found. Therefore we stop the program here
+            err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_2D_lib
+            raise
+        print 'yep12'
+        integrand_c_2D = lib_2D.f
+        integrand_c_2D.restype  = ctypes.c_double
+        integrand_c_2D.argtypes = (ctypes.c_int, ctypes.c_double)
+    elif perform_2d == False:
+        try:
+            path_1D_lib = '/home/basti/SDSS_indie/Python/develop/1D_gaussian_integration_flux_correction.so'
+            lib_1D = ctypes.CDLL(path_1D_lib)
+        except OSError as err:
+            # file could not be found. Therefore we stop the program here
+            err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_1D_lib
+            raise
+        print 'yep'
+        integrand_c_1D = lib_1D.f
+        integrand_c_1D.restype  = ctypes.c_double
+        integrand_c_1D.argtypes = (ctypes.c_int, ctypes.c_double)
 
     #@jit
-    @profile
+    #@profile
     def flux_correction_2d(delta_y):
         # now we introduce the integration in such a way as to integrate over the 2D fiber
         # incl. r. Need to perform substitution from r to r', such that r' is the distance
@@ -333,7 +353,7 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         #                     lambda theta: a,
         # )
 
-        flux_corr = dblquad(integrand_c, 
+        flux_corr = dblquad(integrand_c_2D, 
                             0.0,
                             2.0*np.pi,
                             lambda theta: 0.0,
@@ -346,8 +366,12 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     def flux_correction(delta_y):
         # R = np.sqrt((a**2 - delta_y**2 + 2*delta_y*np.sin(0)*(delta_y*np.sin(0) + np.sqrt(a**2 + delta_y**2*(np.sin(0)**2 - 1)))))
         # print 'R', R, sigma, a, delta_y
-        func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
-        flux_corr = quad(func, 0, 2*np.pi)
+        #func = lambda x: 1/(2*np.pi)*(1 - np.exp(-(a**2 - delta_y**2 + 2*delta_y*np.sin(x)*(delta_y*np.sin(x) + np.sqrt(a**2 + delta_y**2*(np.sin(x)**2 - 1))))/(2*sigma**2)))
+        flux_corr = quad(integrand_c_1D, 
+                         0, 
+                         2*np.pi, 
+                         args=(delta_y, sigma)
+        )
         return flux_corr[0]
 
     def flux_base():
@@ -357,7 +381,7 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         flux_corr = quad(func, 0, 2*np.pi)
         return flux_corr[0]        
 
-    flux_base1 = flux_correction(0)
+    #flux_base1 = flux_correction(0)
     flux_base2 = flux_base()
 
     # calculate the correction for the center at 5400 A
@@ -402,6 +426,164 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
         assert np.count_nonzero(np.isfinite(flux_4000)) == spec.npix
 
     return flux_4000, flux_5400, flux_base2
+
+
+
+#@profile
+def perform_flux_correction_adaptive(spec, settings, resid_corr, seeing='seeing50', check_weather = 0):
+    c_integration_flag = True
+
+    # First start with residual correction for Balmer problem
+    # resid_corr array starts from wavelength 10**(3.5496)
+    if np.size(resid_corr) > 1:
+        start_resid_corr = int((spec.beginwl - 3.5496)*1000)
+        resid_corr_temp = resid_corr[start_resid_corr:start_resid_corr+spec.npix]
+    spec.flux       = spec.flux       / resid_corr_temp
+    spec.flux_error = spec.flux_error / resid_corr_temp
+
+    # Now perform correction for loss of flux due to offset in position of fiber
+
+    # fiber diameter 2 arcseconds on sky (120 microns)
+    # fiber radius in arcseconds
+    a = 1
+    # lam = wavelength in microns
+    # Angstrom : 10e-10 m, micron : 10e-6 m
+    lam = spec.wave * 10**(-10) / (10**(-6))
+    #reference_lam = 5400*10**(-4)
+    from SDSSmodules.SDSSfiles import get_array_from_ind_exposures
+
+    try:
+        seeing50, seeing80, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings, check_weather=check_weather)
+    except ValueError:
+        print('No weather data was found!')
+        return False
+    except IOError:
+        print('Something is wrong with this fits file')
+        return True
+    spec.altitude = altitude
+    def n(x, P, ppW, T):
+        # refractivity of atmosphere based on wavelength, pressure, partial water pressure and temperature
+        # Marini, J.W., NASA Technical Report X-591-73-351, (1973). 
+        # http://physics.ucsd.edu/~tmurphy/apollo/doc/MM.pdf 24.09.14
+        #print 'propert', x, P, ppW, T
+        refr = (287.604 + 1.6288/(x**2) + 0.0136/(x**4)) * (P / 1013.25) * (1 / (1 + 0.003661*T)) - 0.055 * (760 / 1013.25) * (ppW / (1 + 0.00366 * T))
+        # calculate refractive index n from refractivity refr
+        # refr = 10^6 (n - 1)
+        val = refr * 10**(-6) + 1
+        return val
+
+    # zenith angle in radian
+    Z = (90.0 - altitude)*2*np.pi / 360.0
+    # sigma from seeing
+    if seeing == 'seeing50':
+        sigma = seeing50 / (2*np.sqrt(2 * np.log(2)))
+    elif seeing == 'seeing80':
+        sigma = seeing80 / (2*np.sqrt(2 * np.log(2)))
+    
+    def calc_delta_y(lam, reference_lam, P, ppW, T, Z):
+        val = 206265 * ( n(lam, P, ppW, T) - n(reference_lam, P, ppW, T) ) * np.tan(Z)
+        return val
+
+
+    #@profile
+    def flux_correction_2d(delta_y):
+        # now we introduce the integration in such a way as to integrate over the 2D fiber
+        # incl. r. Need to perform substitution from r to r', such that r' is the distance
+        # from the center of the flux to any given point within the fiber
+        # r_prime_2: r'^2
+        # dr_by_dr_prime = dr / dr'. Jacobian of substitution
+        # now we use the C library instead!!!
+        flux_corr = dblquad(integrand_c_2D, 
+                            0.0,
+                            2.0*np.pi,
+                            lambda theta: 0.0,
+                            lambda theta: a,
+                            args=(delta_y, sigma)
+        )
+        flux_corr = flux_corr[0]
+        return flux_corr
+
+    def flux_correction(delta_y):
+        flux_corr = quad(integrand_c_1D, 
+                         0, 
+                         2*np.pi, 
+                         args=(delta_y, sigma)
+        )
+        return flux_corr[0]
+
+    # calculate the correction for the center at 5400 A
+    reference_lam_5400 = 5400*10**(-4)
+    delta_y_5400 = calc_delta_y(lam, reference_lam_5400, P, ppW, T, Z)
+    # calculate the correction for the center at 4000 A
+    reference_lam_4000 = 4000*10**(-4)
+    delta_y_4000 = calc_delta_y(lam, reference_lam_4000, P, ppW, T, Z)
+    flux_5400  = np.empty(np.size(delta_y_5400))
+    assert np.count_nonzero(np.isfinite(delta_y_4000)) == spec.npix
+    flux_4000  = np.empty(np.size(delta_y_4000))
+    print np.max(delta_y_4000), np.min(delta_y_4000), np.max(delta_y_5400), np.min(delta_y_5400)
+
+    if (np.max(delta_y_4000) < 1.0 and 
+        np.min(delta_y_4000) > -1.0 and 
+        np.max(delta_y_5400) < 1.0 and
+        np.min(delta_y_5400) > -1.0):
+        perform_2d = False
+        print 'perform 1D int'
+    else:
+        perform_2d = True
+        print 'perform 2D int'
+    ########################################
+    # Now we first load the C library:
+    # the C library is compiled by:
+    # gcc -shared -o <name>.so -fPIC <name>.c
+    if perform_2d == True:
+        try:
+            path_2D_lib = '/home/basti/SDSS_indie/Python/develop/2D_gaussian_integration_flux_correction.so'
+            lib_2D = ctypes.CDLL(path_2D_lib)
+        except OSError as err:
+            # file could not be found. Therefore we stop the program here
+            err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_2D_lib
+            raise
+        print 'yep12'
+        integrand_c_2D = lib_2D.f
+        integrand_c_2D.restype  = ctypes.c_double
+        integrand_c_2D.argtypes = (ctypes.c_int, ctypes.c_double)
+    elif perform_2d == False:
+        try:
+            path_1D_lib = '/home/basti/SDSS_indie/Python/develop/1D_gaussian_integration_flux_correction.so'
+            lib_1D = ctypes.CDLL(path_1D_lib)
+        except OSError as err:
+            # file could not be found. Therefore we stop the program here
+            err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_1D_lib
+            raise
+        print 'yep'
+        integrand_c_1D = lib_1D.f
+        integrand_c_1D.restype  = ctypes.c_double
+        integrand_c_1D.argtypes = (ctypes.c_int, ctypes.c_double)
+
+    if perform_2d == True:
+        for i in xrange(np.size(delta_y_5400)):
+            flux_5400[i]  = flux_correction_2d(delta_y_5400[i])
+            flux_4000[i]  = flux_correction_2d(delta_y_4000[i])
+        del(lib_2D)
+    else:
+        for i in xrange(np.size(delta_y_4000)):
+            flux_5400[i]  = flux_correction(delta_y_5400[i])
+            flux_4000[i]  = flux_correction(delta_y_4000[i])
+        del(lib_1D)
+    # with the returned arrays, what we're going to do is the following:
+    # multiply the spectrum by flux_5400 to revert the 'wrongly calibrated spectrum' to 
+    # something resembling an uncalibrated spectrum
+    # and then divide by flux_4000 to get a properly corrected spectrum
+    
+    if perform_2d == True:
+        # if perform_2d == False, then we use the 1D correction
+        # IMPORTANT: in that case, the calculation might break at a certain delta_y, that is because
+        # the integration only works, as long as the center wavelength is inside the
+        # fiber. That is delta_y < fiber radius
+        assert np.count_nonzero(np.isfinite(flux_5400)) == spec.npix
+        assert np.count_nonzero(np.isfinite(flux_4000)) == spec.npix
+    return flux_4000, flux_5400
+
 
 def apply_flux_correction(spec, correction_fits_file, settings, resid_corr):
 

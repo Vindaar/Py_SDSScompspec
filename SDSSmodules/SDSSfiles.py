@@ -256,7 +256,7 @@ def read_spec_fitsio(qso, spec, settings=None, resid_corr = None):
 
     # Table data from HDU2; contains redshift, MJD and psf magnitudes
     spec.z = hdu[2]['Z'][0]
-    print 'ok,', spec.z
+    #print 'ok,', spec.z
     zerr   = hdu[2]['Z_ERR'][0]
     zwarn  = hdu[2]['ZWARNING'][0]
 

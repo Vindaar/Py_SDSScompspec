@@ -119,6 +119,40 @@ def find_element_larger_in_arrays(wave, target_wave, npix):
     #         break
 
 
+def trim_wavelength_arrays(array_list):
+    # this function receives several wavelength arrays (in a list)
+    # and reduces them to arrays of the same size.
+    # it returns a list of arrays corresponding to indices, which are to be kept 
+    # in each array
+    narrays = len(array_list)
+    min_list = []
+    max_list = []
+    for i in xrange(narrays):
+        min_list.append(np.min(array_list[i]))
+        max_list.append(np.max(array_list[i]))
+    # now determine the largest value of the minima and the smallest of the maxima
+    min = np.max(min_list)
+    max = np.min(max_list)
+    index_list  = []
+    array_sizes = []
+    for i in xrange(narrays):
+        ind_min = np.where(array_list[i] > min)[0][0]
+        ind_max = np.where(array_list[i] < max)[0][-1]
+        index_list.append(np.arange(ind_min, ind_max))
+        array_sizes.append(np.size(array_list[i][index_list[i]]))
+    
+    smallest_array = np.min(array_sizes)
+    for i in xrange(narrays):
+        if array_sizes[i] > smallest_array:
+            diff = array_sizes[i] - smallest_array
+            index_list[i] = index_list[i][:-1]
+
+
+    return index_list
+        
+
+
+
 def calc_siqr(flux, nmed):
     # Function which calculates the 68% semi-interquartile range, in the exact same way
     # as done in the C program.

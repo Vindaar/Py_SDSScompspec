@@ -136,9 +136,9 @@ class WorkOnSpectrum:
             ind = np.where(spec.wave/(1.0+spec.z) < 1200)[0]
             flux_lya   = smooth_array(spec.flux[ind], 100, spec.flux_error[ind])
             #        flux_lya   = smooth_array(flux_lya[ind], 5, spec.flux_error[ind])
-            spec_1d_corr = deepcopy(spec)
-            flux_corr    = perform_flux_correction(spec, self.settings, self.resid_corr)
-            flux_corr_1d = perform_flux_correction(spec_1d_corr, self.settings, self.resid_corr, perform_2d = False)
+            #spec_1d_corr = deepcopy(spec)
+            flux_corr    = perform_flux_correction_adaptive(spec, self.settings, self.resid_corr)
+            #flux_corr_1d = perform_flux_correction_adaptive(spec_1d_corr, self.settings, self.resid_corr)
             corr_4000 = flux_corr[0]
             corr_5400 = flux_corr[1]
             flux_corr = corr_5400 / corr_4000
@@ -183,8 +183,12 @@ class WorkOnSpectrum:
             self.axarr[1].plot(spec.wave, flux_corr, 'b')
             self.axarr[1].plot(spec.wave, corr_4000, 'green')
             self.axarr[1].plot(spec.wave, corr_5400, 'orange')
-            self.axarr[1].plot(spec.wave, flux_corr_1d[0], 'k')
-            self.axarr[1].plot(spec.wave, flux_corr_1d[1], 'cyan')
+
+            # comparison with the 1D case:
+            #self.axarr[1].plot(spec.wave, flux_corr_1d[0], 'k')
+            #self.axarr[1].plot(spec.wave, flux_corr_1d[1], 'cyan')
+
+
             #self.axarr[1].plot(spec.wave, flux_corr_ind, 'g')
             #self.axarr[0].errorbar(10**(x_ind), 10**(y_ind), xerr=0, yerr=10**(y_ind)*y_err_ind, elinewidth=2.5, fmt='c', markersize=5, marker='x')#, linestyle='None')
             # plot fit_powerlaw
