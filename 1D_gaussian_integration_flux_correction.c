@@ -2,6 +2,10 @@
 // in the flux correction, if perform_2d is used. That is, both integral are
 // calculated numerically.
 
+/* - 2D gaussian integration was moved to an external C function */
+/*   called 2D_gaussian_integration_flux_correction.c */
+/*   Compile this by */
+/*   gcc -shared -o 2D_gaussian_integration_flux_correction.so -fPIC 2D_gaussian_integration_flux_correction.c */
 #include <math.h>
 # define M_PIl          3.141592653589793238462643383279502884L /* pi */
 

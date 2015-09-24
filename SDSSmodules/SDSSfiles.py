@@ -19,9 +19,138 @@ import re
 
 from SDSSmodules.SDSScorrections import *
 
+# import rebin_1d from congrid
+from congrid import rebin_1d
+
 #####################################################################################
 ################################### read files ######################################
 #####################################################################################
+
+
+
+def read_arrays_and_interpolate(files, wave_low, wave_high, npix = 4000, corr_flag = False):
+    # files: list of FITS files
+    # wave_low:  beginning wavelength from where to interpolate
+    # wave_high: end wavelenght where to interpolate to
+    # npix:      number of pixels to interpolate to (default 4000)
+    # corr_flag: flag which if true, we also read the flux_correction
+    #            function 
+    
+    # this function works in the folowing way:
+    # 1) it receives a list of FITS files
+    # 2) it checks the filetype of the FITS files
+    # 3) it reads the FITS files in a loop using the corresponding read_*_fitsio
+    #    function
+    # 4) we obtain the indices from the wavelength array which we need to consider
+    #    in the flux arrays to interpolate them
+    #    We also check for isfinite in flux and flux_corr
+    # 5) using rebin_1d we interpolate all arrays to exactly the same length
+    # 6) after 10000 files, we dump the data to a cPickle file
+    ########## WARNING: We immediately drop spectra, which have wavelength arrays with
+    ################### np.min(wave) > wave_low 
+    ################### np.min(wave) < wave_high
+
+    # variable names:
+    # flux, flux_corr: LISTS (already interpolated!!!)
+    # fl, f_corr: arrays of ONE single spectrum
+    
+
+    filetype = check_filetype(files[0])
+    
+    for i, file in enumerate(files):
+        # if we are not on the first iteration and i mod 5000 == 0
+        # then we dump the lists to file
+        if i is not 0 and i % 5000 == 0:
+            # open file to dump data into
+            outfile_name = '/mnt/Daten/Uni/SDSS/data/pickled_data/data_' + str(filetype) + '_' + str(i) + '.dat' 
+            outfile = open(outfile_name, 'wb')
+            cPickle.dump(flux,       outfile, -1)
+            cPickle.dump(flux_error, outfile, -1)
+            if corr_flag == True:
+                cPickle.dump(flux_corr, outfile, -1)
+            outfile.close()
+            
+            # now we reset the lists
+            flux          = []
+            flux_error    = []
+            wave_min_list = []
+            if corr_flag == True:
+                flux_corr  = []
+        elif i is 0:
+            flux          = []
+            flux_error    = []
+            wave_min_list = []
+            if corr_flag == True:
+                flux_corr  = []
+
+        if i % 500 == 0:
+            print i, 'spectra read'
+
+        spec = spectrum()        
+        if filetype == 1:
+            read_spSpec_fitsio(files[i], spec, None)
+        if filetype == 2:
+            read_spec_fitsio(files[i], spec, None)
+        if filetype == 3:
+            read_speclya_fitsio(files[i], spec, None)
+        if filetype == 4:
+            read_mockspec_fitsio(files[i], spec)
+    
+        wave   = spec.wave
+        if corr_flag == True:
+            # this is where it gets ugly? 
+            # if corr_flag is true, we need to 
+            # if perform_corr is set to 0, we simply read the flux correction from the corrected FITS files
+            # we don't have a list of files in /home/z5010843/data/flux_calib_duplicates/
+            # so we just try to open the current files
+            # read correction function
+            file_path = '/mnt/Daten/Uni/SDSS/data/DR12_flux_calib/' + files[i]
+            try:
+                hdu            = fitsio.FITS(file_path)
+                spec.flux_corr = hdu[1]['corr'][:]
+                hdu.close()
+            except IOError:
+                # set flag to 1, so that we skip this duplicate
+                # if an IOError is called, we probably miss the file containing the flux correction
+                # we could in principle then call perform_flux_correction_adaptive and get it
+                # Do we want that?
+                continue
+            except ValueError:
+                # set flag to 1, so that we skip this duplicate
+                # if this happens, the file doesn't contain the corr column it seems? broken file?
+                continue
+            f_corr = spec.flux_corr / spec.flux
+        if np.min(wave) > wave_low or np.max(wave) < wave_high:
+            print('The wavelength array of %s is inside the wave_low and wave_high boundaries' % files[i])
+            print 'wave_low  = ', wave_low
+            print 'wave_high = ', wave_high
+            print 'wave min and max:', np.min(wave), np.max(wave)
+            print 'file: ', files[i]
+            print 'Skip this file and continue'
+            continue
+       
+        index = np.where( (wave > wave_low ) &
+                          (wave < wave_high) &
+                          (np.isfinite(spec.flux) == True) &
+                          (np.isfinite(f_corr) == True))[0]
+        # the last line should hopefully be redundant!
+        # now we have the indices of all elements in the wavelength (and thus flux, flux_corr)
+        # arrays, which we will now interpolate
+        fl   = spec.flux[index]
+        fl   = rebin_1d(fl,   npix, method='spline')
+        wave = rebin_1d(wave, npix, method='spline')
+        flux.append(fl)
+        wave_min_list.append(wave)
+        if corr_flag is True:
+            f_corr = f_corr[index]
+            f_corr = rebin_1d(f_corr, npix, method='spline')
+            flux_corr.append(f_corr)
+        
+        # at this point we should be done for this spectrum
+        ############### ITERATION END
+
+
+
 
 def read_resid_corr(file):
     # This function reads the file containing the residual correction
@@ -565,7 +694,11 @@ def get_array_from_ind_exposures(spec, settings, return_array = 0, check_weather
     h = np.mean(humidity_array)
     # Convert pressure from Inches of Hg to HPa
     P = P * 3386.389 / 100
-    ppW = partial_water_pressure(P, T, h)
+    try:
+        ppW = partial_water_pressure(P, T, h)
+    except ValueError:
+        print 'Partial water pressure not successfully calculated'
+        raise
     if np.isnan(ppW):
         print 'ppW', spec.filename
 

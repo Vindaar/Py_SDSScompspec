@@ -125,29 +125,72 @@ def trim_wavelength_arrays(array_list):
     # it returns a list of arrays corresponding to indices, which are to be kept 
     # in each array
     narrays = len(array_list)
+    array_list = np.asarray(array_list)
+    print('There are %i arrays to trim' % narrays)
     min_list = []
     max_list = []
     for i in xrange(narrays):
         min_list.append(np.min(array_list[i]))
+        if np.min(array_list[i]) > 8000:
+            print 'min', np.min(array_list[i])
+            print array_list[i], i
         max_list.append(np.max(array_list[i]))
     # now determine the largest value of the minima and the smallest of the maxima
-    min = np.max(min_list)
-    max = np.min(max_list)
+    #min = np.max(min_list)
+    #max = np.min(max_list)
+    # see what happens if we artificially set the limit wavelengths:
+    min = 4000
+    max = 10000
     index_list  = []
     array_sizes = []
     for i in xrange(narrays):
-        ind_min = np.where(array_list[i] > min)[0][0]
-        ind_max = np.where(array_list[i] < max)[0][-1]
-        index_list.append(np.arange(ind_min, ind_max))
-        array_sizes.append(np.size(array_list[i][index_list[i]]))
+        try:
+            ind_min = np.where(array_list[i] > min)[0][0]
+            ind_max = np.where(array_list[i] < max)[0][-1]
+        except IndexError:
+            print('Array number %i produces IndexError. We print the array and min / max:' % i)
+            print array_list[i], min, max
+            print('We skip the array')
+            index_list.append([])
+            array_sizes.append(0)
+        size_ar = np.size(array_list[i][np.arange(ind_min, ind_max)])
+        if size_ar < 3600:
+            index_list.append([])
+            array_sizes.append(0)
+            continue
+        else:
+            index_list. append(np.arange(ind_min, ind_max))
+            array_sizes.append(np.size(array_list[i][index_list[i]]))
+        
     
-    smallest_array = np.min(array_sizes)
+    narrays = len(array_sizes)
+    print('There are %i arrays left to trim' % narrays)
+    array_sizes    = np.asarray(array_sizes)
+    smallest_array = np.min(array_sizes[np.nonzero(array_sizes)[0]])
     for i in xrange(narrays):
         if array_sizes[i] > smallest_array:
             diff = array_sizes[i] - smallest_array
-            index_list[i] = index_list[i][:-1]
-
-
+            if array_sizes[i] == 0:
+                continue
+            else:
+                index_list[i] = index_list[i][:-diff]
+                try:
+                    assert np.size(index_list[i]) == smallest_array
+                except AssertionError:
+                    print np.size(index_list[i]), smallest_array
+                    raise
+    index_list = np.asarray(index_list)
+    # for i, element in enumerate(index_list):
+    #     if i == 0:
+    #         nsize = np.size(index_list[0])
+    #         if nsize == 0:
+    #             continue
+    #     else:
+    #         nsize = np.size(index_list[i-1])
+    #         if nsize == 0:
+    #             continue
+    #     assert np.size(element) == nsize        
+    
     return index_list
         
 

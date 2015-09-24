@@ -37,18 +37,18 @@ import ctypes
 # TODO: check real speed difference between python and cython
 # factor ~60 faster
 try:
-    from dust_extinction_array import dust_extinction_array
+    from dust_extinction.dust_extinction_array import dust_extinction_array
 except ImportError:
     print 'It seems like dust_extinction_array.pyx was not compiled properly.'
     print 'This is done by typing:'
     print 'python setup.py build_ext --inplace'
-    print 'in the folder of PyS_SDSScompspec.py.'
+    print 'in the folder of the module dust_extinction'
     print ''
     if raw_input("Do you wish to compile it now? (y/N) ") == ('y' or 'Y'):
         import os
         if os.system("python setup.py build_ext --inplace") == 0:
             try:
-                from dust_extinction_array import dust_extinction_array
+                from dust_extinction.dust_extinction_array import dust_extinction_array
                 print 'compilation successful!'
                 print 'starting program...'
             except ImportError:
@@ -84,8 +84,10 @@ def partial_water_pressure(P, T, h):
     # pressure of water at that pressure and temp
     if np.isnan(P) or np.isnan(T) or np.isnan(h):
         print P, T, h
-        import sys
-        sys.exit('ERROR in partial_water_pressure(): Pressure, temperature and humidity values all NAN. Something bad happened before!!')
+        print 'ERROR in partial_water_pressure(): Pressure, temperature and humidity values all NAN. Something bad happened before!!'
+        #import sys
+        #sys.exit('ERROR in partial_water_pressure(): Pressure, temperature and humidity values all NAN. Something bad happened before!!')
+        raise ValueError
     eppW = (1.0007 + 3.46 * 10**(-6) * P) * (6.1121)*np.exp(17.502*T / (240.97 + T))
     ppW  = h * eppW / 100
     #print 'ppW:', ppW, eppW, P
@@ -270,10 +272,10 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
     #reference_lam = 5400*10**(-4)
     from SDSSmodules.SDSSfiles import get_array_from_ind_exposures
 
-    #try:
-    seeing50, seeing80, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings, check_weather=check_weather)
-    #except ValueError:
-    #    raise ValueError('No weather data was found!')
+    try:
+        seeing50, seeing80, altitude, P, T, ppW = get_array_from_ind_exposures(spec, settings, check_weather=check_weather)
+    except ValueError:
+        raise ValueError('No weather data was found!')
     spec.altitude = altitude
     def n(x, P, ppW, T):
         # refractivity of atmosphere based on wavelength, pressure, partial water pressure and temperature
@@ -311,7 +313,6 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
             # file could not be found. Therefore we stop the program here
             err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_2D_lib
             raise
-        print 'yep12'
         integrand_c_2D = lib_2D.f
         integrand_c_2D.restype  = ctypes.c_double
         integrand_c_2D.argtypes = (ctypes.c_int, ctypes.c_double)
@@ -323,7 +324,6 @@ def perform_flux_correction(spec, settings, resid_corr, seeing='seeing50', check
             # file could not be found. Therefore we stop the program here
             err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_1D_lib
             raise
-        print 'yep'
         integrand_c_1D = lib_1D.f
         integrand_c_1D.restype  = ctypes.c_double
         integrand_c_1D.argtypes = (ctypes.c_int, ctypes.c_double)
@@ -543,7 +543,6 @@ def perform_flux_correction_adaptive(spec, settings, resid_corr, seeing='seeing5
             # file could not be found. Therefore we stop the program here
             err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_2D_lib
             raise
-        print 'yep12'
         integrand_c_2D = lib_2D.f
         integrand_c_2D.restype  = ctypes.c_double
         integrand_c_2D.argtypes = (ctypes.c_int, ctypes.c_double)
@@ -555,7 +554,6 @@ def perform_flux_correction_adaptive(spec, settings, resid_corr, seeing='seeing5
             # file could not be found. Therefore we stop the program here
             err.message = err.message + "The shared library containing the compiled 2D gaussian integration could not be found. Please place it in the folder\n" + path_1D_lib
             raise
-        print 'yep'
         integrand_c_1D = lib_1D.f
         integrand_c_1D.restype  = ctypes.c_double
         integrand_c_1D.argtypes = (ctypes.c_int, ctypes.c_double)
